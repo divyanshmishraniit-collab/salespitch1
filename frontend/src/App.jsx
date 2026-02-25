@@ -613,7 +613,7 @@ function App() {
                           {book}
                         </span>
                         <a
-                          href={`${import.meta.env.VITE_BACKEND_URL}/api/uploads/${encodeURIComponent(book)}`}
+                          href={`${import.meta.env.VITE_BACKEND_URL}/uploads/${encodeURIComponent(book)}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           style={{
