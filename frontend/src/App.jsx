@@ -110,7 +110,30 @@ function App() {
       alert('Please upload PDF files only');
       return;
     }
-    // Upload logic can be added here
+    if (pdfFiles.length > 3) {
+      alert('You can upload a maximum of 3 PDF files at a time.');
+      return;
+    }
+    const formData = new FormData();
+    pdfFiles.forEach(file => {
+      formData.append('pdfs', file);
+    });
+    try {
+      const res = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/upload-books`, {
+        method: 'POST',
+        body: formData
+        // Note: Do NOT set Content-Type header; browser will set it with correct boundary
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert('Books uploaded and processed successfully!');
+        fetchUploadedBooks();
+      } else {
+        alert('Upload failed: ' + (data.message || 'Unknown error'));
+      }
+    } catch (err) {
+      alert('Upload failed. Please try again.');
+    }
   };
 
   const startRecording = () => {
