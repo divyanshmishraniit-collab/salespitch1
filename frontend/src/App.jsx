@@ -1,10 +1,15 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Mic, MicOff, Upload, BookOpen, MessageSquare, TrendingUp } from 'lucide-react';
 
+const AUTH_KEY = 'sales_app_authed';
+
 function App() {
   const [activeTab, setActiveTab] = useState('upload');
   const [uploadedBooks, setUploadedBooks] = useState([]);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  // Initialize from sessionStorage so refresh doesn't log out
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    return sessionStorage.getItem(AUTH_KEY) === 'true';
+  });
   const [passwordInput, setPasswordInput] = useState('');
   const [passwordError, setPasswordError] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
@@ -21,6 +26,7 @@ function App() {
       });
       const data = await res.json();
       if (data.success) {
+        sessionStorage.setItem(AUTH_KEY, 'true');
         setIsAuthenticated(true);
       } else {
         setPasswordError('Incorrect password. Please try again.');
@@ -78,7 +84,7 @@ function App() {
   const [dealClosed, setDealClosed] = useState(false);
 
   const recognitionRef = useRef(null);
-  const isRecordingRef = useRef(false); // <-- KEY FIX: use a ref to track recording state reliably
+  const isRecordingRef = useRef(false);
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
@@ -89,7 +95,6 @@ function App() {
     scrollToBottom();
   }, [messages]);
 
-  // Initialize Speech Recognition ONCE on mount
   useEffect(() => {
     if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
       alert('Speech recognition is not supported in this browser. Please use Chrome or Edge.');
@@ -121,11 +126,9 @@ function App() {
         isRecordingRef.current = false;
         setIsRecording(false);
       }
-      // For non-fatal errors (network, aborted), we let onend handle restart
     };
 
     recognition.onend = () => {
-      // Only restart if we're still supposed to be recording
       if (isRecordingRef.current) {
         try {
           recognition.start();
@@ -137,14 +140,13 @@ function App() {
 
     recognitionRef.current = recognition;
 
-    // Cleanup on unmount
     return () => {
       isRecordingRef.current = false;
       try {
         recognition.stop();
       } catch (e) {}
     };
-  }, []); // Empty deps — runs once only
+  }, []);
 
   const handleFileUpload = async (e) => {
     const files = Array.from(e.target.files);
@@ -183,7 +185,7 @@ function App() {
       alert('Speech recognition is not available. Please use Chrome or Edge.');
       return;
     }
-    if (isRecordingRef.current) return; // Already recording
+    if (isRecordingRef.current) return;
 
     setTranscript('');
     isRecordingRef.current = true;
@@ -193,8 +195,6 @@ function App() {
       recognitionRef.current.start();
     } catch (error) {
       console.error('Error starting recognition:', error);
-      // If already started (e.g. rapid double-click), just mark as recording
-      // The onend/restart loop will keep it going
     }
   };
 
