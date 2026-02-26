@@ -4,7 +4,33 @@ import { Mic, MicOff, Upload, BookOpen, MessageSquare, TrendingUp } from 'lucide
 function App() {
   const [activeTab, setActiveTab] = useState('upload');
   const [uploadedBooks, setUploadedBooks] = useState([]);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [isVerifying, setIsVerifying] = useState(false);
 
+  const handlePasswordSubmit = async () => {
+  if (!passwordInput.trim()) return;
+  setIsVerifying(true);
+  setPasswordError('');
+  try {
+    const res = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/verify-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: passwordInput })
+    });
+    const data = await res.json();
+    if (data.success) {
+      setIsAuthenticated(true);
+    } else {
+      setPasswordError('Incorrect password. Please try again.');
+    }
+  } catch (err) {
+    setPasswordError('Could not connect to server. Please try again.');
+  } finally {
+    setIsVerifying(false);
+  }
+  };
   // Delete a book
   const handleDeleteBook = async (filename) => {
     if (!window.confirm(`Delete ${filename}?`)) return;
@@ -444,6 +470,87 @@ function App() {
       default: return '#334155';
     }
   };
+
+  if (!isAuthenticated) {
+  return (
+    <div style={{
+      minHeight: '100vh',
+      background: 'linear-gradient(135deg, #1e293b 0%, #7e22ce 50%, #1e293b 100%)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '2rem'
+    }}>
+      <div style={{
+        background: '#1e293b',
+        borderRadius: '1rem',
+        padding: '2.5rem',
+        width: '100%',
+        maxWidth: '400px',
+        boxShadow: '0 20px 25px -5px rgba(0,0,0,0.5)',
+        textAlign: 'center'
+      }}>
+        <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🔒</div>
+        <h1 style={{ color: 'white', fontSize: '1.75rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>
+          AI Sales Pitch Analyzer
+        </h1>
+        <p style={{ color: '#e9d5ff', marginBottom: '2rem', fontSize: '0.95rem' }}>
+          Enter your password to access the platform
+        </p>
+        <input
+          type="password"
+          value={passwordInput}
+          onChange={(e) => setPasswordInput(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && handlePasswordSubmit()}
+          placeholder="Enter password"
+          style={{
+            width: '100%',
+            padding: '0.85rem 1rem',
+            borderRadius: '0.5rem',
+            border: passwordError ? '2px solid #dc2626' : '2px solid #334155',
+            background: '#0f172a',
+            color: 'white',
+            fontSize: '1rem',
+            marginBottom: '0.75rem',
+            outline: 'none',
+            boxSizing: 'border-box'
+          }}
+        />
+        {passwordError && (
+          <p style={{ color: '#f87171', fontSize: '0.875rem', marginBottom: '0.75rem', textAlign: 'left' }}>
+            ⚠️ {passwordError}
+          </p>
+        )}
+        <button
+          onClick={handlePasswordSubmit}
+          disabled={isVerifying || !passwordInput.trim()}
+          style={{
+            width: '100%',
+            background: isVerifying || !passwordInput.trim()
+              ? '#6b7280'
+              : 'linear-gradient(135deg, #9333ea 0%, #ec4899 100%)',
+            color: 'white',
+            padding: '0.85rem',
+            borderRadius: '0.5rem',
+            fontWeight: 'bold',
+            fontSize: '1rem',
+            border: 'none',
+            cursor: isVerifying || !passwordInput.trim() ? 'not-allowed' : 'pointer',
+            boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
+            transition: 'all 0.2s'
+          }}
+        >
+          {isVerifying ? '🔄 Verifying...' : '🔓 Unlock'}
+        </button>
+        <p style={{ color: '#64748b', fontSize: '0.8rem', marginTop: '1.5rem' }}>
+          &copy; {new Date().getFullYear()} NIIT Limited
+        </p>
+      </div>
+    </div>
+  );
+}
+
+
 
   return (
     <div style={{

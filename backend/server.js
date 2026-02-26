@@ -67,6 +67,22 @@ const upload = multer({
   }
 });
 
+// Password verification endpoint
+app.post('/api/verify-password', (req, res) => {
+  const { password } = req.body;
+  const correctPassword = process.env.APP_PASSWORD;
+
+  if (!correctPassword) {
+    return res.status(500).json({ success: false, message: 'Server password not configured' });
+  }
+
+  if (password === correctPassword) {
+    res.json({ success: true });
+  } else {
+    res.status(401).json({ success: false, message: 'Incorrect password' });
+  }
+});
+
 // In-memory storage for book content
 let booksContent = [];
 let conversationHistory = [];
