@@ -1,4 +1,3 @@
-
 // server.js
 const express = require('express');
 const cors = require('cors');
@@ -31,74 +30,75 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Endpoint to delete a PDF by filename
-app.delete('/api/delete-book/:filename', async (req, res) => {
-  try {
-    const filename = req.params.filename;
-    // Prevent directory traversal
-    if (filename.includes('..') || filename.includes('/')) {
-      return res.status(400).json({ success: false, message: 'Invalid filename' });
-    }
-    const filePath = path.join(__dirname, 'uploads', filename);
-    await fs.unlink(filePath);
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ success: false, message: 'Failed to delete file', error: err.message });
-  }
-});
-
-// Endpoint to list uploaded PDFs
-app.get('/api/list-books', async (req, res) => {
-  try {
-    const uploadsDir = path.join(__dirname, 'uploads');
-    const files = await fs.readdir(uploadsDir);
-    const pdfs = files.filter(f => f.endsWith('.pdf'));
-    res.json({ success: true, books: pdfs });
-  } catch (err) {
-    res.status(500).json({ success: false, message: 'Failed to list books', error: err.message });
-  }
-});
-// Serve uploaded PDFs statically
-// Storage for uploaded PDFs with higher limits
-const upload = multer({ 
-  dest: 'uploads/',
-  limits: {
-    fileSize: 100 * 1024 * 1024 // 100MB limit
-  }
-});
-
-// Password verification endpoint
-app.post('/api/verify-password', (req, res) => {
-  const { password } = req.body;
-  const correctPassword = process.env.APP_PASSWORD;
-
-  if (!correctPassword) {
-    return res.status(500).json({ success: false, message: 'Server password not configured' });
-  }
-
-  if (password === correctPassword) {
-    res.json({ success: true });
-  } else {
-    res.status(401).json({ success: false, message: 'Incorrect password' });
-  }
-});
-
 // In-memory storage for book content
 let booksContent = [];
 let conversationHistory = [];
 let sessionState = {
   effectivenessScore: 0,
-  negotiationPhase: false, // false: pitch phase, true: negotiation phase
+  negotiationPhase: false,
   currentProposedValue: null,
   dealClosed: false,
-  negotiationHistory: [], // Track all price negotiations
-  lastLLMProposedValue: null, // Track the last value proposed by LLM
-  priceHistory: [] // Track all price changes chronologically
+  negotiationHistory: [],
+  lastLLMProposedValue: null,
+  priceHistory: []
 };
 
 // LiteLLM API configuration
 const LITELLM_API_URL = 'https://litellm.niit.com/v1/chat/completions';
 const LITELLM_API_KEY = process.env.LITELLM_API_KEY;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AUTO-LOAD: Scan uploads/ on startup and populate booksContent
+// ─────────────────────────────────────────────────────────────────────────────
+async function loadBooksFromUploadsDir() {
+  const uploadsDir = path.join(__dirname, 'uploads');
+
+  // Ensure uploads directory exists
+  await fs.mkdir(uploadsDir, { recursive: true });
+
+  let files;
+  try {
+    files = await fs.readdir(uploadsDir);
+  } catch (err) {
+    console.error('❌ Could not read uploads directory:', err.message);
+    return;
+  }
+
+  const pdfs = files.filter(f => f.toLowerCase().endsWith('.pdf'));
+
+  if (pdfs.length === 0) {
+    console.log('📂 No PDFs found in uploads/ — waiting for upload.');
+    return;
+  }
+
+  console.log(`\n📚 Auto-loading ${pdfs.length} PDF(s) from uploads/…`);
+
+  for (const filename of pdfs) {
+    const filePath = path.join(uploadsDir, filename);
+    try {
+      const dataBuffer = await fs.readFile(filePath);
+      const pdfData = await pdfParse(dataBuffer, { max: 0, version: 'v1.10.100' });
+
+      const chunks = chunkText(pdfData.text, 100000);
+
+      booksContent.push({
+        filename,
+        content: pdfData.text.slice(0, 500000),
+        chunks,
+        pages: pdfData.numpages,
+        size: pdfData.text.length
+      });
+
+      console.log(`   ✅ Loaded: ${filename} (${pdfData.numpages} pages, ${(pdfData.text.length / 1024).toFixed(2)} KB)`);
+    } catch (err) {
+      console.error(`   ❌ Failed to load ${filename}:`, err.message);
+    }
+  }
+
+  console.log(`📚 ${booksContent.length} book(s) ready.\n`);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 // Function to call LiteLLM API
 async function callLiteLLM(messages, maxTokens = 1000) {
@@ -118,7 +118,7 @@ async function callLiteLLM(messages, maxTokens = 1000) {
           'Authorization': `Bearer ${LITELLM_API_KEY}`,
           'Content-Type': 'application/json'
         },
-        timeout: 60000 // 60 second timeout for analysis
+        timeout: 60000
       }
     );
 
@@ -148,18 +148,16 @@ function chunkText(text, maxChunkSize = 50000) {
 
 // Function to create RAG context from books
 function createRAGContext(query, maxLength = 3000) {
-  // Simple keyword matching for relevant sections
   const keywords = query.toLowerCase().split(' ').filter(k => k.length > 3);
   const relevantSections = [];
 
   booksContent.forEach(book => {
-    // Process in chunks to handle large books
     const chunks = book.chunks || [book.content];
     
     chunks.forEach(chunk => {
       const sentences = chunk.split(/[.!?]+/);
       sentences.forEach(sentence => {
-        if (sentence.trim().length < 20) return; // Skip very short sentences
+        if (sentence.trim().length < 20) return;
         
         const sentenceLower = sentence.toLowerCase();
         const matchCount = keywords.filter(kw => sentenceLower.includes(kw)).length;
@@ -174,7 +172,6 @@ function createRAGContext(query, maxLength = 3000) {
     });
   });
 
-  // Sort by relevance score and return top sections
   relevantSections.sort((a, b) => b.score - a.score);
   
   let context = '';
@@ -186,6 +183,65 @@ function createRAGContext(query, maxLength = 3000) {
   return context || 'General sales best practices apply.';
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ROUTES
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Endpoint to delete a PDF by filename
+app.delete('/api/delete-book/:filename', async (req, res) => {
+  try {
+    const filename = req.params.filename;
+    if (filename.includes('..') || filename.includes('/')) {
+      return res.status(400).json({ success: false, message: 'Invalid filename' });
+    }
+    const filePath = path.join(__dirname, 'uploads', filename);
+    await fs.unlink(filePath);
+
+    // Also remove from in-memory booksContent
+    booksContent = booksContent.filter(b => b.filename !== filename);
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Failed to delete file', error: err.message });
+  }
+});
+
+// Endpoint to list uploaded PDFs
+app.get('/api/list-books', async (req, res) => {
+  try {
+    const uploadsDir = path.join(__dirname, 'uploads');
+    const files = await fs.readdir(uploadsDir);
+    const pdfs = files.filter(f => f.endsWith('.pdf'));
+    res.json({ success: true, books: pdfs });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Failed to list books', error: err.message });
+  }
+});
+
+// Storage for uploaded PDFs with higher limits
+const upload = multer({ 
+  dest: 'uploads/',
+  limits: {
+    fileSize: 100 * 1024 * 1024 // 100MB limit
+  }
+});
+
+// Password verification endpoint
+app.post('/api/verify-password', (req, res) => {
+  const { password } = req.body;
+  const correctPassword = process.env.APP_PASSWORD;
+
+  if (!correctPassword) {
+    return res.status(500).json({ success: false, message: 'Server password not configured' });
+  }
+
+  if (password === correctPassword) {
+    res.json({ success: true });
+  } else {
+    res.status(401).json({ success: false, message: 'Incorrect password' });
+  }
+});
+
 // Upload and process books
 app.post('/api/upload-books', upload.array('pdfs', 3), async (req, res) => {
   try {
@@ -195,38 +251,42 @@ app.post('/api/upload-books', upload.array('pdfs', 3), async (req, res) => {
       return res.status(400).json({ success: false, message: 'No files uploaded' });
     }
 
-    booksContent = []; // Reset books content
     const processedBooks = [];
 
     for (const file of files) {
       try {
         console.log(`📖 Processing: ${file.originalname}...`);
 
-        // Rename file to original name (with .pdf extension) in uploads dir
         const uploadsDir = path.join(__dirname, 'uploads');
         const newFilePath = path.join(uploadsDir, file.originalname);
         await fs.rename(file.path, newFilePath);
 
         const dataBuffer = await fs.readFile(newFilePath);
 
-        // Parse PDF with options for large files
         const pdfData = await pdfParse(dataBuffer, {
-          max: 0, // Process all pages
+          max: 0,
           version: 'v1.10.100'
         });
 
         console.log(`✅ Parsed: ${file.originalname} (${pdfData.numpages} pages, ${(pdfData.text.length / 1024).toFixed(2)} KB)`);
 
-        // For very large books, chunk the content
-        const chunks = chunkText(pdfData.text, 100000); // 100KB chunks
+        const chunks = chunkText(pdfData.text, 100000);
 
-        booksContent.push({
+        // Replace existing entry if already loaded (e.g. from auto-load), or push new
+        const existingIndex = booksContent.findIndex(b => b.filename === file.originalname);
+        const bookEntry = {
           filename: file.originalname,
-          content: pdfData.text.slice(0, 500000), // Keep first 500KB for quick access
-          chunks: chunks,
+          content: pdfData.text.slice(0, 500000),
+          chunks,
           pages: pdfData.numpages,
           size: pdfData.text.length
-        });
+        };
+
+        if (existingIndex >= 0) {
+          booksContent[existingIndex] = bookEntry;
+        } else {
+          booksContent.push(bookEntry);
+        }
 
         processedBooks.push({
           name: file.originalname,
@@ -234,31 +294,21 @@ app.post('/api/upload-books', upload.array('pdfs', 3), async (req, res) => {
           size: (pdfData.text.length / 1024).toFixed(2) + ' KB'
         });
 
-        // Do not delete uploaded file; keep it for frontend access
-
       } catch (pdfError) {
         console.error(`❌ Error processing ${file.originalname}:`, pdfError.message);
-        
-        // Clean up file even on error
-        try {
-          await fs.unlink(file.path);
-        } catch (unlinkError) {
-          // Ignore unlink errors
-        }
-        
-        // Continue with other files
+        try { await fs.unlink(file.path); } catch (_) {}
         continue;
       }
     }
 
-    if (booksContent.length === 0) {
+    if (processedBooks.length === 0) {
       return res.status(500).json({ 
         success: false, 
         message: 'Failed to process any PDF files. Please ensure they are valid PDFs and not password-protected.' 
       });
     }
 
-    console.log(`\n📚 Successfully processed ${booksContent.length} books:`);
+    console.log(`\n📚 Successfully processed ${processedBooks.length} books:`);
     processedBooks.forEach(book => {
       console.log(`   - ${book.name}: ${book.pages} pages, ${book.size}`);
     });
@@ -353,7 +403,6 @@ app.post('/api/analyze-pitch', async (req, res) => {
 
     console.log(`\n🎯 Analyzing pitch (${pitch.length} chars)...`);
 
-    // Get relevant context from books
     const context = createRAGContext(pitch + ' sales pitch presentation opening value proposition hook', 2500);
     console.log(`📖 RAG Context retrieved (${context.length} chars)`);
 
@@ -430,7 +479,6 @@ app.post('/api/analyze-response', async (req, res) => {
 
     console.log(`\n💬 Analyzing response (${response.length} chars)...`);
 
-    // Get relevant context from books
     const context = createRAGContext(response + ' objection handling sales response customer questions', 2500);
     console.log(`📖 RAG Context retrieved (${context.length} chars)`);
 
@@ -476,14 +524,12 @@ Keep it conversational and encouraging.`;
       content: feedback
     });
 
-    // Extract effectiveness score from feedback
     const scoreMatch = feedback.match(/\*\*Effectiveness Score:\*\*\s*(\d+)/i);
     const currentScore = scoreMatch ? parseInt(scoreMatch[1]) : sessionState.effectivenessScore;
     sessionState.effectivenessScore = Math.max(sessionState.effectivenessScore, currentScore);
 
     console.log(`✅ Feedback complete. Current score: ${sessionState.effectivenessScore}/10`);
     
-    // Check if score is 6 or higher (but only if not already in negotiation phase)
     let shouldAskNegotiation = sessionState.effectivenessScore >= 6 && !sessionState.negotiationPhase && !sessionState.dealClosed;
     
     res.json({ 
@@ -511,13 +557,11 @@ app.post('/api/start-negotiation', async (req, res) => {
       return res.status(400).json({ success: false, message: 'No response provided' });
     }
 
-    // Check if user is ready for negotiation
     const readyForNegotiation = userResponse.toLowerCase().includes('yes') || 
                                  userResponse.toLowerCase().includes('ready') ||
                                  userResponse.toLowerCase().includes('proceed');
 
     if (!readyForNegotiation) {
-      // User not ready yet
       conversationHistory.push({
         role: 'user',
         content: userResponse
@@ -537,7 +581,6 @@ app.post('/api/start-negotiation', async (req, res) => {
       });
     }
 
-    // User is ready for negotiation - LOCK INTO NEGOTIATION PHASE
     sessionState.negotiationPhase = true;
     
     conversationHistory.push({
@@ -588,7 +631,6 @@ app.post('/api/propose-price', async (req, res) => {
       content: `I'm asking for: ${priceProposal}`
     });
 
-    // Store the proposed value
     sessionState.currentProposedValue = priceProposal;
     sessionState.negotiationHistory.push({
       proposedBy: 'salesperson',
@@ -635,11 +677,9 @@ Respond as the buyer/prospect would. Make your counter-offer very specific with 
       content: counterOffer
     });
 
-    // Extract the counter-offer value from AI response (simple extraction)
     const valueMatch = counterOffer.match(/\$?[\d,]+(?:\.\d{2})?|[\d,]+(?:\.\d{2})?\s*(?:per|\/)?/i);
     const extractedValue = valueMatch ? valueMatch[0] : 'to be determined';
 
-    // Store LLM's proposed value for comparison later
     sessionState.lastLLMProposedValue = extractedValue;
 
     sessionState.negotiationHistory.push({
@@ -648,7 +688,6 @@ Respond as the buyer/prospect would. Make your counter-offer very specific with 
       timestamp: new Date().toISOString()
     });
 
-    // Track price in chronological order
     sessionState.priceHistory.push({
       proposedBy: 'llm',
       value: extractedValue,
@@ -683,11 +722,9 @@ app.post('/api/negotiate-response', async (req, res) => {
 
     console.log(`\n💬 Negotiation response received: ${response.slice(0, 100)}...`);
 
-    // Extract any price mentioned in the response
     const priceMatch = response.match(/\$?[\d,]+(?:\.\d{2})?|[\d,]+(?:\.\d{2})?\s*(?:per|\/)?/i);
     const salespersonProposedPrice = priceMatch ? priceMatch[0] : null;
     
-    // Parse prices to numbers for comparison (remove $ and commas)
     const parsePrice = (priceStr) => {
       if (!priceStr) return null;
       const numStr = priceStr.replace(/[^\d.]/g, '');
@@ -697,7 +734,6 @@ app.post('/api/negotiate-response', async (req, res) => {
     const salespersonPriceNum = salespersonProposedPrice ? parsePrice(salespersonProposedPrice) : null;
     const llmProposedNum = sessionState.lastLLMProposedValue ? parsePrice(sessionState.lastLLMProposedValue) : null;
 
-    // Check for acceptance keywords - including phrases about closing and sharing documents
     const acceptanceKeywords = [
       'let\'s do it', 
       'you\'ve got a deal', 
@@ -724,11 +760,9 @@ app.post('/api/negotiate-response', async (req, res) => {
     let shouldAutoClose = false;
     let closingReason = '';
 
-    // More flexible deal closure: accept if they show intent to close
     if (hasAcceptanceKeyword) {
       isDealClosed = true;
       shouldAutoClose = true;
-      // Determine the closing reason
       if (salespersonPriceNum && llmProposedNum && salespersonPriceNum < llmProposedNum) {
         closingReason = 'lower_than_llm_proposal';
       } else if (salespersonPriceNum && salespersonPriceNum < 60000) {
@@ -743,7 +777,6 @@ app.post('/api/negotiate-response', async (req, res) => {
       content: response
     });
 
-    // Handle auto-close scenarios
     if (shouldAutoClose) {
       sessionState.dealClosed = true;
 
@@ -815,7 +848,6 @@ Well done! 🏆`;
       });
     }
 
-    // Extract if they're proposing a new counter-offer
     const valueMatch = response.match(/\$?[\d,]+(?:\.\d{2})?|[\d,]+(?:\.\d{2})?\s*(?:per|\/)?/i);
     const newProposal = valueMatch ? valueMatch[0] : null;
 
@@ -887,7 +919,6 @@ Respond as a thoughtful buyer would. If they're getting closer on price or addin
     const newValueMatch = negotiationContinued.match(/\$?[\d,]+(?:\.\d{2})?|[\d,]+(?:\.\d{2})?\s*(?:per|\/)?/i);
     const newValue = newValueMatch ? newValueMatch[0] : 'to be determined';
 
-    // Update LLM's last proposed value
     sessionState.lastLLMProposedValue = newValue;
 
     sessionState.negotiationHistory.push({
@@ -931,19 +962,20 @@ app.get('/api/session-state', (req, res) => {
   });
 });
 
-// Create uploads directory if it doesn't exist
-const uploadsDir = path.join(__dirname, 'uploads');
-fs.mkdir(uploadsDir, { recursive: true }).catch(console.error);
-
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📚 Ready to process sales training books (up to 100MB per file)`);
-  console.log(`🔑 API Key configured: ${LITELLM_API_KEY ? 'Yes' : 'No'}`);
-  console.log(`📄 pdf-parse loaded: ${typeof pdfParse === 'function' ? 'Yes' : 'No (Type: ' + typeof pdfParse + ')'}`);
-  if (!LITELLM_API_KEY) {
-    console.warn('⚠️  WARNING: LITELLM_API_KEY not found in .env file');
-  }
-  if (typeof pdfParse !== 'function') {
-    console.error('⚠️  WARNING: pdf-parse is not properly loaded!');
-  }
+// ─────────────────────────────────────────────────────────────────────────────
+// START SERVER — auto-load books first, then listen
+// ─────────────────────────────────────────────────────────────────────────────
+loadBooksFromUploadsDir().then(() => {
+  app.listen(PORT, () => {
+    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`📚 Books in memory: ${booksContent.length}`);
+    console.log(`🔑 API Key configured: ${LITELLM_API_KEY ? 'Yes' : 'No'}`);
+    console.log(`📄 pdf-parse loaded: ${typeof pdfParse === 'function' ? 'Yes' : 'No (Type: ' + typeof pdfParse + ')'}`);
+    if (!LITELLM_API_KEY) {
+      console.warn('⚠️  WARNING: LITELLM_API_KEY not found in .env file');
+    }
+    if (typeof pdfParse !== 'function') {
+      console.error('⚠️  WARNING: pdf-parse is not properly loaded!');
+    }
+  });
 });

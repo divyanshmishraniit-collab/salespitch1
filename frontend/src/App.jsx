@@ -10,28 +10,28 @@ function App() {
   const [isVerifying, setIsVerifying] = useState(false);
 
   const handlePasswordSubmit = async () => {
-  if (!passwordInput.trim()) return;
-  setIsVerifying(true);
-  setPasswordError('');
-  try {
-    const res = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/verify-password`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: passwordInput })
-    });
-    const data = await res.json();
-    if (data.success) {
-      setIsAuthenticated(true);
-    } else {
-      setPasswordError('Incorrect password. Please try again.');
+    if (!passwordInput.trim()) return;
+    setIsVerifying(true);
+    setPasswordError('');
+    try {
+      const res = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/verify-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: passwordInput })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setIsAuthenticated(true);
+      } else {
+        setPasswordError('Incorrect password. Please try again.');
+      }
+    } catch (err) {
+      setPasswordError('Could not connect to server. Please try again.');
+    } finally {
+      setIsVerifying(false);
     }
-  } catch (err) {
-    setPasswordError('Could not connect to server. Please try again.');
-  } finally {
-    setIsVerifying(false);
-  }
   };
-  // Delete a book
+
   const handleDeleteBook = async (filename) => {
     if (!window.confirm(`Delete ${filename}?`)) return;
     try {
@@ -49,7 +49,6 @@ function App() {
     }
   };
 
-  // Fetch uploaded books from backend
   const fetchUploadedBooks = async () => {
     try {
       const res = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/list-books`);
@@ -64,7 +63,6 @@ function App() {
     }
   };
 
-  // On mount, fetch uploaded books
   useEffect(() => {
     fetchUploadedBooks();
   }, []);
@@ -80,9 +78,9 @@ function App() {
   const [dealClosed, setDealClosed] = useState(false);
 
   const recognitionRef = useRef(null);
+  const isRecordingRef = useRef(false); // <-- KEY FIX: use a ref to track recording state reliably
   const messagesEndRef = useRef(null);
 
-  // Auto-scroll to bottom of messages
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -91,43 +89,62 @@ function App() {
     scrollToBottom();
   }, [messages]);
 
+  // Initialize Speech Recognition ONCE on mount
   useEffect(() => {
-    // Initialize Speech Recognition
-    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      recognitionRef.current = new SpeechRecognition();
-      recognitionRef.current.continuous = true;
-      recognitionRef.current.interimResults = true;
-      recognitionRef.current.lang = 'en-US';
-
-      recognitionRef.current.onresult = (event) => {
-        let finalTranscript = '';
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const transcript = event.results[i][0].transcript;
-          if (event.results[i].isFinal) {
-            finalTranscript += transcript + ' ';
-          }
-        }
-        setTranscript(prev => prev + finalTranscript);
-      };
-
-      recognitionRef.current.onerror = (event) => {
-        console.error('Speech recognition error:', event.error);
-        if (event.error === 'not-allowed') {
-          alert('Microphone access denied. Please allow microphone access and try again.');
-        }
-        setIsRecording(false);
-      };
-
-      recognitionRef.current.onend = () => {
-        if (isRecording) {
-          recognitionRef.current.start();
-        }
-      };
-    } else {
+    if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
       alert('Speech recognition is not supported in this browser. Please use Chrome or Edge.');
+      return;
     }
-  }, [isRecording]);
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+
+    recognition.onresult = (event) => {
+      let finalTranscript = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) {
+          finalTranscript += event.results[i][0].transcript + ' ';
+        }
+      }
+      if (finalTranscript) {
+        setTranscript(prev => prev + finalTranscript);
+      }
+    };
+
+    recognition.onerror = (event) => {
+      console.error('Speech recognition error:', event.error);
+      if (event.error === 'not-allowed') {
+        alert('Microphone access denied. Please allow microphone access and try again.');
+        isRecordingRef.current = false;
+        setIsRecording(false);
+      }
+      // For non-fatal errors (network, aborted), we let onend handle restart
+    };
+
+    recognition.onend = () => {
+      // Only restart if we're still supposed to be recording
+      if (isRecordingRef.current) {
+        try {
+          recognition.start();
+        } catch (e) {
+          console.warn('Recognition restart failed:', e);
+        }
+      }
+    };
+
+    recognitionRef.current = recognition;
+
+    // Cleanup on unmount
+    return () => {
+      isRecordingRef.current = false;
+      try {
+        recognition.stop();
+      } catch (e) {}
+    };
+  }, []); // Empty deps — runs once only
 
   const handleFileUpload = async (e) => {
     const files = Array.from(e.target.files);
@@ -148,7 +165,6 @@ function App() {
       const res = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/upload-books`, {
         method: 'POST',
         body: formData
-        // Note: Do NOT set Content-Type header; browser will set it with correct boundary
       });
       const data = await res.json();
       if (data.success) {
@@ -163,57 +179,60 @@ function App() {
   };
 
   const startRecording = () => {
-    if (recognitionRef.current && !isRecording) {
-      setTranscript('');
-      try {
-        recognitionRef.current.start();
-        setIsRecording(true);
-      } catch (error) {
-        console.error('Error starting recognition:', error);
-      }
+    if (!recognitionRef.current) {
+      alert('Speech recognition is not available. Please use Chrome or Edge.');
+      return;
+    }
+    if (isRecordingRef.current) return; // Already recording
+
+    setTranscript('');
+    isRecordingRef.current = true;
+    setIsRecording(true);
+
+    try {
+      recognitionRef.current.start();
+    } catch (error) {
+      console.error('Error starting recognition:', error);
+      // If already started (e.g. rapid double-click), just mark as recording
+      // The onend/restart loop will keep it going
     }
   };
 
   const stopRecording = () => {
-    if (recognitionRef.current && isRecording) {
+    if (!recognitionRef.current) return;
+
+    isRecordingRef.current = false;
+    setIsRecording(false);
+
+    try {
       recognitionRef.current.stop();
-      setIsRecording(false);
+    } catch (error) {
+      console.error('Error stopping recognition:', error);
     }
   };
 
   const analyzePitchFromVoice = async (pitchText) => {
     setIsAnalyzing(true);
-    console.log('Starting pitch analysis for:', pitchText.slice(0, 100));
-
     try {
       const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/analyze-pitch`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pitch: pitchText })
       });
-
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
       }
-
       const data = await response.json();
-
-      if (!data.success) {
-        throw new Error(data.message || 'Analysis failed');
-      }
-
-      console.log('Pitch analysis received');
+      if (!data.success) throw new Error(data.message || 'Analysis failed');
 
       setMessages(prev => [
         ...prev,
         { role: 'user', content: pitchText },
         { role: 'assistant', content: data.analysis, type: 'analysis' }
       ]);
-
       setTranscript('');
     } catch (error) {
-      console.error('Pitch analysis error:', error);
       alert('❌ Error analyzing pitch: ' + error.message);
     } finally {
       setIsAnalyzing(false);
@@ -222,30 +241,20 @@ function App() {
 
   const analyzeResponse = async (text) => {
     setIsAnalyzing(true);
-    console.log('Starting response analysis for:', text.slice(0, 100));
-
     try {
       const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/analyze-response`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ response: text })
       });
-
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
       }
-
       const data = await response.json();
-
-      if (!data.success) {
-        throw new Error(data.message || 'Analysis failed');
-      }
-
-      console.log('Response analysis received');
+      if (!data.success) throw new Error(data.message || 'Analysis failed');
 
       setEffectivenessScore(data.effectivenessScore || 0);
-
       setMessages(prev => [
         ...prev,
         { role: 'user', content: text },
@@ -264,10 +273,8 @@ function App() {
           ]);
         }, 1000);
       }
-
       setTranscript('');
     } catch (error) {
-      console.error('Analysis error:', error);
       alert('❌ Error analyzing response: ' + error.message);
     } finally {
       setIsAnalyzing(false);
@@ -280,7 +287,6 @@ function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
-
       const data = await response.json();
       setMessages([
         {
@@ -292,7 +298,6 @@ function App() {
       setSessionStarted(true);
       setActiveTab('practice');
     } catch (error) {
-      console.error('Session start error:', error);
       alert('❌ Error starting session. Make sure books are uploaded and backend is running.');
     }
   };
@@ -307,7 +312,7 @@ function App() {
     ]);
     setTranscript('');
     setIsAnalyzing(false);
-    setIsRecording(false);
+    stopRecording();
     setEffectivenessScore(0);
     setNegotiationPhase(false);
     setCurrentProposedValue(null);
@@ -316,24 +321,18 @@ function App() {
 
   const handleNegotiationResponse = async (text) => {
     setIsAnalyzing(true);
-
     try {
       const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/start-negotiation`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userResponse: text })
       });
-
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
       }
-
       const data = await response.json();
-
-      if (!data.success) {
-        throw new Error(data.message || 'Failed to process negotiation response');
-      }
+      if (!data.success) throw new Error(data.message || 'Failed to process negotiation response');
 
       setMessages(prev => [
         ...prev,
@@ -341,13 +340,9 @@ function App() {
         { role: 'assistant', content: data.message, type: data.negotiationStarted ? 'negotiation' : 'feedback' }
       ]);
 
-      if (data.negotiationStarted) {
-        setNegotiationPhase(true);
-      }
-
+      if (data.negotiationStarted) setNegotiationPhase(true);
       setTranscript('');
     } catch (error) {
-      console.error('Negotiation response error:', error);
       alert('❌ Error: ' + error.message);
     } finally {
       setIsAnalyzing(false);
@@ -356,39 +351,29 @@ function App() {
 
   const handlePriceProposal = async (text) => {
     setIsAnalyzing(true);
-
     try {
       const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/propose-price`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ priceProposal: text })
       });
-
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
       }
-
       const data = await response.json();
-
-      if (!data.success) {
-        throw new Error(data.message || 'Failed to process price proposal');
-      }
+      if (!data.success) throw new Error(data.message || 'Failed to process price proposal');
 
       const priceMatch = text.match(/\$?[\d,]+(?:\.\d{2})?|[\d,]+(?:\.\d{2})?\s*(?:per|\/)?/i);
-      const extractedPrice = priceMatch ? priceMatch[0] : text;
-
-      setCurrentProposedValue(extractedPrice);
+      setCurrentProposedValue(priceMatch ? priceMatch[0] : text);
 
       setMessages(prev => [
         ...prev,
         { role: 'user', content: `My proposed value: ${text}`, type: 'price-proposal' },
         { role: 'assistant', content: data.counterOffer, type: 'counter-offer' }
       ]);
-
       setTranscript('');
     } catch (error) {
-      console.error('Price proposal error:', error);
       alert('❌ Error: ' + error.message);
     } finally {
       setIsAnalyzing(false);
@@ -397,24 +382,18 @@ function App() {
 
   const handleNegotiationContinue = async (text) => {
     setIsAnalyzing(true);
-
     try {
       const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/negotiate-response`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ response: text })
       });
-
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
       }
-
       const data = await response.json();
-
-      if (!data.success) {
-        throw new Error(data.message || 'Failed to process negotiation');
-      }
+      if (!data.success) throw new Error(data.message || 'Failed to process negotiation');
 
       if (data.dealClosed) {
         setDealClosed(true);
@@ -426,10 +405,8 @@ function App() {
         { role: 'user', content: text },
         { role: 'assistant', content: data.message, type: data.dealClosed ? 'deal-closed' : 'negotiation' }
       ]);
-
       setTranscript('');
     } catch (error) {
-      console.error('Negotiation continue error:', error);
       alert('❌ Error: ' + error.message);
     } finally {
       setIsAnalyzing(false);
@@ -472,85 +449,83 @@ function App() {
   };
 
   if (!isAuthenticated) {
-  return (
-    <div style={{
-      minHeight: '100vh',
-      background: 'linear-gradient(135deg, #1e293b 0%, #7e22ce 50%, #1e293b 100%)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: '2rem'
-    }}>
+    return (
       <div style={{
-        background: '#1e293b',
-        borderRadius: '1rem',
-        padding: '2.5rem',
-        width: '100%',
-        maxWidth: '400px',
-        boxShadow: '0 20px 25px -5px rgba(0,0,0,0.5)',
-        textAlign: 'center'
+        minHeight: '100vh',
+        background: 'linear-gradient(135deg, #1e293b 0%, #7e22ce 50%, #1e293b 100%)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '2rem'
       }}>
-        <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🔒</div>
-        <h1 style={{ color: 'white', fontSize: '1.75rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>
-          AI Sales Pitch Analyzer
-        </h1>
-        <p style={{ color: '#e9d5ff', marginBottom: '2rem', fontSize: '0.95rem' }}>
-          Enter your password to access the platform
-        </p>
-        <input
-          type="password"
-          value={passwordInput}
-          onChange={(e) => setPasswordInput(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handlePasswordSubmit()}
-          placeholder="Enter password"
-          style={{
-            width: '100%',
-            padding: '0.85rem 1rem',
-            borderRadius: '0.5rem',
-            border: passwordError ? '2px solid #dc2626' : '2px solid #334155',
-            background: '#0f172a',
-            color: 'white',
-            fontSize: '1rem',
-            marginBottom: '0.75rem',
-            outline: 'none',
-            boxSizing: 'border-box'
-          }}
-        />
-        {passwordError && (
-          <p style={{ color: '#f87171', fontSize: '0.875rem', marginBottom: '0.75rem', textAlign: 'left' }}>
-            ⚠️ {passwordError}
+        <div style={{
+          background: '#1e293b',
+          borderRadius: '1rem',
+          padding: '2.5rem',
+          width: '100%',
+          maxWidth: '400px',
+          boxShadow: '0 20px 25px -5px rgba(0,0,0,0.5)',
+          textAlign: 'center'
+        }}>
+          <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🔒</div>
+          <h1 style={{ color: 'white', fontSize: '1.75rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>
+            AI Sales Pitch Analyzer
+          </h1>
+          <p style={{ color: '#e9d5ff', marginBottom: '2rem', fontSize: '0.95rem' }}>
+            Enter your password to access the platform
           </p>
-        )}
-        <button
-          onClick={handlePasswordSubmit}
-          disabled={isVerifying || !passwordInput.trim()}
-          style={{
-            width: '100%',
-            background: isVerifying || !passwordInput.trim()
-              ? '#6b7280'
-              : 'linear-gradient(135deg, #9333ea 0%, #ec4899 100%)',
-            color: 'white',
-            padding: '0.85rem',
-            borderRadius: '0.5rem',
-            fontWeight: 'bold',
-            fontSize: '1rem',
-            border: 'none',
-            cursor: isVerifying || !passwordInput.trim() ? 'not-allowed' : 'pointer',
-            boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
-            transition: 'all 0.2s'
-          }}
-        >
-          {isVerifying ? '🔄 Verifying...' : '🔓 Unlock'}
-        </button>
-        <p style={{ color: '#64748b', fontSize: '0.8rem', marginTop: '1.5rem' }}>
-          &copy; {new Date().getFullYear()} NIIT Limited
-        </p>
+          <input
+            type="password"
+            value={passwordInput}
+            onChange={(e) => setPasswordInput(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handlePasswordSubmit()}
+            placeholder="Enter password"
+            style={{
+              width: '100%',
+              padding: '0.85rem 1rem',
+              borderRadius: '0.5rem',
+              border: passwordError ? '2px solid #dc2626' : '2px solid #334155',
+              background: '#0f172a',
+              color: 'white',
+              fontSize: '1rem',
+              marginBottom: '0.75rem',
+              outline: 'none',
+              boxSizing: 'border-box'
+            }}
+          />
+          {passwordError && (
+            <p style={{ color: '#f87171', fontSize: '0.875rem', marginBottom: '0.75rem', textAlign: 'left' }}>
+              ⚠️ {passwordError}
+            </p>
+          )}
+          <button
+            onClick={handlePasswordSubmit}
+            disabled={isVerifying || !passwordInput.trim()}
+            style={{
+              width: '100%',
+              background: isVerifying || !passwordInput.trim()
+                ? '#6b7280'
+                : 'linear-gradient(135deg, #9333ea 0%, #ec4899 100%)',
+              color: 'white',
+              padding: '0.85rem',
+              borderRadius: '0.5rem',
+              fontWeight: 'bold',
+              fontSize: '1rem',
+              border: 'none',
+              cursor: isVerifying || !passwordInput.trim() ? 'not-allowed' : 'pointer',
+              boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
+              transition: 'all 0.2s'
+            }}
+          >
+            {isVerifying ? '🔄 Verifying...' : '🔓 Unlock'}
+          </button>
+          <p style={{ color: '#64748b', fontSize: '0.8rem', marginTop: '1.5rem' }}>
+            &copy; {new Date().getFullYear()} NIIT Limited
+          </p>
+        </div>
       </div>
-    </div>
-  );
-}
-
-
+    );
+  }
 
   return (
     <div style={{
@@ -652,7 +627,6 @@ function App() {
                 </h2>
               </div>
 
-              {/* Drag & Drop Upload */}
               <div
                 style={{
                   border: '2px dashed #e0e7ef',
