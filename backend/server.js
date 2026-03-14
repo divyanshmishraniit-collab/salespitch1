@@ -274,14 +274,17 @@ const upload = multer({
 // Password verification endpoint
 app.post('/api/verify-password', (req, res) => {
   const { password } = req.body;
-  const correctPassword = process.env.APP_PASSWORD;
+  const adminPassword = process.env.APP_PASSWORD;
+  const userPassword = process.env.USER_PASSWORD;
 
-  if (!correctPassword) {
+  if (!adminPassword) {
     return res.status(500).json({ success: false, message: 'Server password not configured' });
   }
 
-  if (password === correctPassword) {
-    res.json({ success: true });
+  if (password === adminPassword) {
+    res.json({ success: true, role: 'admin' });
+  } else if (userPassword && password === userPassword) {
+    res.json({ success: true, role: 'user' });
   } else {
     res.status(401).json({ success: false, message: 'Incorrect password' });
   }

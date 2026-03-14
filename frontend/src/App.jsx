@@ -7,12 +7,24 @@ import TutorialPage from './pages/TutorialPage';
 import './App.css';
 
 const AUTH_KEY = 'sales_app_authed';
+const ROLE_KEY = 'sales_app_role';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('upload');
+  const [activeTab, setActiveTab] = useState(() => {
+    // If returning user is not admin, default to 'practice' so they don't
+    // land on the hidden 'upload' tab
+    const savedRole = sessionStorage.getItem(ROLE_KEY);
+    return savedRole === 'admin' ? 'upload' : 'practice';
+  });
+
   const [uploadedBooks, setUploadedBooks] = useState([]);
+
   const [isAuthenticated, setIsAuthenticated] = useState(() =>
     sessionStorage.getItem(AUTH_KEY) === 'true'
+  );
+
+  const [userRole, setUserRole] = useState(() =>
+    sessionStorage.getItem(ROLE_KEY) || null
   );
 
   const fetchUploadedBooks = async () => {
@@ -29,9 +41,20 @@ export default function App() {
     fetchUploadedBooks();
   }, []);
 
-  const handleAuthSuccess = () => {
+  const handleLogout = () => {
+    sessionStorage.removeItem(AUTH_KEY);
+    sessionStorage.removeItem(ROLE_KEY);
+    setIsAuthenticated(false);
+    setUserRole(null);
+  };
+
+  const handleAuthSuccess = (role) => {
     sessionStorage.setItem(AUTH_KEY, 'true');
+    sessionStorage.setItem(ROLE_KEY, role);
     setIsAuthenticated(true);
+    setUserRole(role);
+    // Send non-admins straight to Practice since they can't see Knowledge Base
+    setActiveTab(role === 'admin' ? 'upload' : 'practice');
   };
 
   if (!isAuthenticated) {
@@ -44,9 +67,11 @@ export default function App() {
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         hasBooks={uploadedBooks.length > 0}
+        userRole={userRole}
+        onLogout={handleLogout}
       />
       <main className="app-main">
-        {activeTab === 'upload' && (
+        {activeTab === 'upload' && userRole === 'admin' && (
           <UploadPage
             uploadedBooks={uploadedBooks}
             fetchUploadedBooks={fetchUploadedBooks}

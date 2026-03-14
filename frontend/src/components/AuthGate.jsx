@@ -19,7 +19,7 @@ export default function AuthGate({ onSuccess }) {
       });
       const data = await res.json();
       if (data.success) {
-        onSuccess();
+        onSuccess(data.role); // ← pass 'admin' or 'user' up
       } else {
         setError('Incorrect password. Please try again.');
       }

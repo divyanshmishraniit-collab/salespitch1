@@ -1,8 +1,10 @@
 import React from 'react';
-import { BookOpen, Mic, Target, GraduationCap } from 'lucide-react';
+import { BookOpen, Mic, Target, GraduationCap, LogOut } from 'lucide-react';
 import './Navbar.css';
 
-export default function Navbar({ activeTab, setActiveTab, hasBooks }) {
+export default function Navbar({ activeTab, setActiveTab, hasBooks, userRole, onLogout }) {
+  const isAdmin = userRole === 'admin';
+
   return (
     <header className="navbar">
       <div className="navbar-inner">
@@ -14,13 +16,15 @@ export default function Navbar({ activeTab, setActiveTab, hasBooks }) {
         </div>
 
         <nav className="navbar-nav">
-          <button
-            className={`nav-tab ${activeTab === 'upload' ? 'active' : ''}`}
-            onClick={() => setActiveTab('upload')}
-          >
-            <BookOpen size={15} />
-            <span>Knowledge Base</span>
-          </button>
+          {isAdmin && (
+            <button
+              className={`nav-tab ${activeTab === 'upload' ? 'active' : ''}`}
+              onClick={() => setActiveTab('upload')}
+            >
+              <BookOpen size={15} />
+              <span>Knowledge Base</span>
+            </button>
+          )}
           <button
             className={`nav-tab ${activeTab === 'practice' ? 'active' : ''} ${!hasBooks ? 'disabled' : ''}`}
             onClick={() => hasBooks && setActiveTab('practice')}
@@ -39,9 +43,15 @@ export default function Navbar({ activeTab, setActiveTab, hasBooks }) {
           </button>
         </nav>
 
-        <div className="navbar-badge">
-          <span className="badge-dot" />
-          NIIT Limited
+        <div className="navbar-right">
+          <div className="navbar-badge">
+            <span className="badge-dot" />
+            NIIT Limited
+          </div>
+          <button className="logout-btn" onClick={onLogout} title="Logout">
+            <LogOut size={15} />
+            <span>Logout</span>
+          </button>
         </div>
       </div>
     </header>
