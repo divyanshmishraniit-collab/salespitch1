@@ -1,5 +1,5 @@
 import React from 'react';
-import { BookOpen, Mic, Target } from 'lucide-react';
+import { BookOpen, Mic, Target, GraduationCap } from 'lucide-react';
 import './Navbar.css';
 
 export default function Navbar({ activeTab, setActiveTab, hasBooks }) {
@@ -29,6 +29,13 @@ export default function Navbar({ activeTab, setActiveTab, hasBooks }) {
             <Mic size={15} />
             <span>Practice</span>
             {!hasBooks && <span className="nav-lock">🔒</span>}
+          </button>
+          <button
+            className={`nav-tab ${activeTab === 'tutorial' ? 'active' : ''}`}
+            onClick={() => setActiveTab('tutorial')}
+          >
+            <GraduationCap size={15} />
+            <span>Tutorial</span>
           </button>
         </nav>
 

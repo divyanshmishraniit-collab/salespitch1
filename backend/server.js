@@ -287,6 +287,28 @@ app.post('/api/verify-password', (req, res) => {
   }
 });
 
+app.post('/api/tutorial-ai', async (req, res) => {
+  try {
+    const { systemPrompt, userContent } = req.body;
+ 
+    if (!systemPrompt || !userContent) {
+      return res.status(400).json({ success: false, message: 'systemPrompt and userContent are required' });
+    }
+ 
+    const messages = [
+      { role: 'system',    content: systemPrompt },
+      { role: 'user',      content: userContent  },
+    ];
+ 
+    const result = await callLiteLLM(messages, 1200);
+ 
+    res.json({ success: true, result });
+  } catch (error) {
+    console.error('❌ Tutorial AI error:', error.message);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 // Upload and process books
 app.post('/api/upload-books', upload.array('pdfs', 3), async (req, res) => {
   try {
@@ -563,31 +585,72 @@ app.post('/api/analyze-response', async (req, res) => {
       content: response
     });
 
+    // Extract the last question the AI asked from conversation history
+    const lastAIMessage = conversationHistory
+      .slice()
+      .reverse()
+      .find(m => m.role === 'assistant');
+    const lastQuestionHint = lastAIMessage
+      ? `\n\nThe last question/message you asked the salesperson was:\n"${lastAIMessage.content.slice(-600)}"\n`
+      : '';
+
     const feedbackPrompt = `${moodInstruction}
 
 Based on these sales training principles:
 
 ${context}
-
-The salesperson responded with:
+${lastQuestionHint}
+The salesperson just responded with:
 "${response}"
 
-Provide feedback using exactly these sections:
+FIRST, determine whether the salesperson's response actually addresses the question you last asked.
+
+─── CASE A — RESPONSE IS OFF-TOPIC OR EVASIVE ───
+If their answer is vague, changes the subject, ignores the question, or fails to address what was specifically asked:
+1. Call it out directly, matching your mood persona:
+   - Happy mood: warmly but clearly — e.g. "I appreciate the enthusiasm, but you didn't quite answer my question!"
+   - Moderate mood: professionally — e.g. "I notice you didn't directly address what I asked."
+   - Aggressive mood: bluntly — e.g. "That's not what I asked. Stop dodging."
+2. In ONE sentence, explain what was missing from their answer.
+3. Re-ask THE EXACT SAME QUESTION again (word-for-word or very close to it), in your mood persona's tone.
+4. Do NOT award a high score — score Query Handling 2/10 or lower.
+5. Use exactly these sections:
 
 **Effectiveness Score:** X/10
 
 **What Was Effective:**
-- List what worked well in their response
+- (note anything genuinely good, or acknowledge there was little)
+
+**What Could Be Improved:**
+- You did not directly answer the question that was asked
+- (any other issues)
+
+**Next Step:**
+Re-ask the same question here, phrased in your mood persona's tone.
+
+**Dimension Scores (out of 10):**
+- Tone: X/10
+- Communication: X/10
+- Content: X/10
+- Query Handling: X/10
+- Closure: X/10
+
+─── CASE B — RESPONSE IS ON-TOPIC ───
+If their answer genuinely and directly addresses what was asked, provide normal feedback:
+
+**Effectiveness Score:** X/10
+
+**What Was Effective:**
+- List what worked well
 
 **What Could Be Improved:**
 - List areas for improvement
 
 **Next Step:**
-Either ask ONE more challenging prospect question about the product, implementation, timeline, or company fit — phrase it in the tone consistent with the customer mood persona above (e.g. for aggressive: blunt and pressuring; for happy: curious and excited; for moderate: professional and probing).
+Ask ONE new challenging prospect question about the product, implementation, timeline, or company fit — phrased in the tone of your mood persona.
 OR if they've handled 3+ questions well, congratulate them and provide a brief summary.
 
 **Dimension Scores (out of 10):**
-Score this specific response honestly. Use exactly this format on separate lines:
 - Tone: X/10
 - Communication: X/10
 - Content: X/10

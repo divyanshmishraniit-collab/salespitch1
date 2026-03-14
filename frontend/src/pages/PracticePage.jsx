@@ -541,15 +541,17 @@ export default function PracticePage({ uploadedBooks }) {
 
       {/* ── Right Panel (Mood + Scores) ───────────── */}
       <div className="right-panel">
-        <CustomerMoodPanel
-          selectedMood={customerMood}
-          onMoodChange={setCustomerMood}
-          disabled={sessionStarted}
-        />
+        
         <ScoresPanel
           scores={scores}
           isUpdating={scoresUpdating}
           roundCount={scoreRound}
+        />
+
+        <CustomerMoodPanel
+          selectedMood={customerMood}
+          onMoodChange={setCustomerMood}
+          disabled={sessionStarted}
         />
       </div>
 

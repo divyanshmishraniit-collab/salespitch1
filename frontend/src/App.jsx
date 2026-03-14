@@ -3,6 +3,7 @@ import Navbar from './components/Navbar';
 import AuthGate from './components/AuthGate';
 import UploadPage from './pages/UploadPage';
 import PracticePage from './pages/PracticePage';
+import TutorialPage from './pages/TutorialPage';
 import './App.css';
 
 const AUTH_KEY = 'sales_app_authed';
@@ -55,6 +56,7 @@ export default function App() {
         {activeTab === 'practice' && (
           <PracticePage uploadedBooks={uploadedBooks} />
         )}
+        {activeTab === 'tutorial' && <TutorialPage />}
       </main>
       <footer className="app-footer">
         <span>© {new Date().getFullYear()} NIIT Limited. All rights reserved.</span>
