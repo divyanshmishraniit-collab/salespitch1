@@ -5,7 +5,7 @@
 /* ── Root — fixed-height, no page scroll ─────────────────── */
 .practice-page {
   display: flex;
-  height: calc(100vh - 130px);
+  height: calc(100vh - 150px);
   max-width: 1400px;
   margin: 0 auto;
   padding: 1.25rem 1.5rem;
