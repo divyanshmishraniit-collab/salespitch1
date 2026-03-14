@@ -1,0 +1,369 @@
+.chat-message {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  animation-fill-mode: both;
+}
+
+.chat-message.user { flex-direction: row-reverse; }
+
+/* Wide card layout for structured messages */
+.chat-message.wide {
+  align-items: flex-start;
+}
+
+/* ─── Avatars ───────────────────────────────────────────── */
+.msg-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.62rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  letter-spacing: 0.01em;
+  margin-top: 2px;
+}
+
+.msg-avatar.user           { background: var(--accent); color: var(--bg); }
+.msg-avatar.analysis,
+.msg-avatar.feedback       { background: rgba(104,211,145,0.15); color: var(--accent-3); }
+.msg-avatar.negotiation-prompt,
+.msg-avatar.counter-offer,
+.msg-avatar.negotiation    { background: rgba(246,173,85,0.15); color: var(--accent-2); }
+.msg-avatar.deal-closed    { background: rgba(99,179,237,0.15); color: var(--accent); }
+.msg-avatar:not(.user):not(.analysis):not(.feedback):not(.negotiation-prompt):not(.counter-offer):not(.negotiation):not(.deal-closed) {
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+}
+
+/* ─── Plain Bubbles ─────────────────────────────────────── */
+.msg-bubble {
+  max-width: 72%;
+  border-radius: var(--radius-lg);
+  padding: 0.85rem 1.1rem;
+  line-height: 1.65;
+}
+
+.msg-bubble.user {
+  background: var(--accent);
+  color: var(--bg);
+  border-bottom-right-radius: 4px;
+  font-size: 0.9rem;
+}
+
+.msg-bubble.assistant {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  border-bottom-left-radius: 4px;
+}
+
+.msg-bubble.feedback,
+.msg-bubble.analysis       { border-color: rgba(104,211,145,0.2); background: rgba(104,211,145,0.04); }
+.msg-bubble.negotiation-prompt,
+.msg-bubble.counter-offer,
+.msg-bubble.negotiation    { border-color: rgba(246,173,85,0.2);  background: rgba(246,173,85,0.04); }
+.msg-bubble.deal-closed    { border-color: rgba(99,179,237,0.3);  background: rgba(99,179,237,0.06); }
+
+.msg-label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  margin-bottom: 0.5rem;
+  opacity: 0.65;
+}
+
+.msg-bubble.feedback .msg-label,
+.msg-bubble.analysis .msg-label  { color: var(--accent-3); }
+.msg-bubble.negotiation-prompt .msg-label,
+.msg-bubble.counter-offer .msg-label { color: var(--accent-2); }
+.msg-bubble.deal-closed .msg-label   { color: var(--accent); }
+
+.msg-content {
+  font-size: 0.9rem;
+  white-space: pre-wrap;
+  margin: 0;
+}
+
+/* ─── Structured Card ───────────────────────────────────── */
+.msg-card {
+  flex: 1;
+  min-width: 0;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  background: var(--bg-card);
+}
+
+.msg-card.analysis,
+.msg-card.feedback {
+  border-color: rgba(104,211,145,0.18);
+}
+
+.msg-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.7rem 1.1rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-3);
+  background: rgba(104,211,145,0.05);
+}
+
+.msg-card.feedback .msg-card-header { color: var(--accent-3); background: rgba(104,211,145,0.05); }
+
+/* ─── Structured Content ────────────────────────────────── */
+.structured-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* Score Block */
+.block-score {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+
+.score-ring-wrap {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  flex-shrink: 0;
+}
+
+.score-ring-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: row;
+  gap: 0;
+}
+
+.score-value {
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.score-denom {
+  font-size: 0.65rem;
+  font-weight: 500;
+  opacity: 0.6;
+  align-self: flex-end;
+  margin-bottom: 2px;
+}
+
+.score-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.score-title {
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.score-sub {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+/* Summary Block */
+.block-summary {
+  padding: 0.9rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.block-summary p {
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+  line-height: 1.65;
+  margin: 0;
+}
+
+/* List Blocks (Strengths / Improvements) */
+.block-list {
+  padding: 0.85rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.block-list-header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  margin-bottom: 0.65rem;
+}
+
+.block-list.strengths .block-list-header    { color: var(--accent-3); }
+.block-list.improvements .block-list-header { color: var(--accent-2); }
+
+.block-list ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.block-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  line-height: 1.55;
+}
+
+.list-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 6px;
+}
+
+.strengths-dot    { background: var(--accent-3); box-shadow: 0 0 6px rgba(104,211,145,0.5); }
+.improvements-dot { background: var(--accent-2); box-shadow: 0 0 6px rgba(246,173,85,0.4); }
+
+/* ─── Critical Question Block ───────────────────────────── */
+.block-critical {
+  margin: 1rem 1.25rem 0;
+  border-radius: var(--radius-md);
+  border: 1.5px solid rgba(251, 191, 36, 0.35);
+  background: rgba(251, 191, 36, 0.05);
+  overflow: hidden;
+}
+
+.critical-header {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.6rem 1rem;
+  background: rgba(251, 191, 36, 0.1);
+  border-bottom: 1px solid rgba(251, 191, 36, 0.2);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #f6c90e;
+}
+
+.critical-question {
+  padding: 0.9rem 1rem 0.75rem;
+  font-size: 0.95rem;
+  font-weight: 500;
+  font-style: italic;
+  color: var(--text-primary);
+  line-height: 1.6;
+  margin: 0;
+  border-bottom: 1px solid rgba(251, 191, 36, 0.15);
+}
+
+.critical-cta {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.55rem 1rem;
+  font-size: 0.75rem;
+  color: rgba(246, 201, 14, 0.6);
+  font-style: normal;
+}
+
+/* ─── Question / Ask Block ──────────────────────────────── */
+.block-question {
+  margin: 1rem 1.25rem 1.25rem;
+  border-radius: var(--radius-md);
+  border: 1.5px solid rgba(99, 179, 237, 0.4);
+  background: rgba(99, 179, 237, 0.06);
+  overflow: hidden;
+}
+
+.question-header {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.6rem 1rem;
+  background: rgba(99, 179, 237, 0.12);
+  border-bottom: 1px solid rgba(99, 179, 237, 0.2);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.question-text {
+  padding: 0.9rem 1rem 0.75rem;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  line-height: 1.6;
+  margin: 0;
+  border-bottom: 1px solid rgba(99, 179, 237, 0.15);
+}
+
+.question-cta {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.55rem 1rem;
+  font-size: 0.75rem;
+  color: rgba(99, 179, 237, 0.6);
+}
+
+/* Plain text block */
+.block-text {
+  padding: 0.9rem 1.25rem;
+}
+
+.block-text p {
+  font-size: 0.88rem;
+  color: var(--text-primary);
+  line-height: 1.65;
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+/* Remove border-bottom from last child in structured content */
+.structured-content > *:last-child {
+  border-bottom: none;
+}
+
+.msg-bubble.deal-lost    { border-color: rgba(252,129,129,0.3); background: rgba(252,129,129,0.06); }
+.msg-avatar.deal-lost    { background: rgba(252,129,129,0.15); color: var(--danger); }
+.msg-bubble.deal-lost .msg-label { color: var(--danger); }
+
+.msg-bubble.off-context-warning {
+  border-color: rgba(252,129,129,0.25);
+  background: rgba(252,129,129,0.05);
+  border-left: 3px solid var(--danger);
+}
+.msg-avatar.off-context-warning { background: rgba(252,129,129,0.15); color: var(--danger); }
+.msg-bubble.off-context-warning .msg-label { color: var(--danger); }

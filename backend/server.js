@@ -40,12 +40,57 @@ let sessionState = {
   dealClosed: false,
   negotiationHistory: [],
   lastLLMProposedValue: null,
-  priceHistory: []
+  priceHistory: [],
+  customerMood: 'moderate',
 };
 
 // LiteLLM API configuration
 const LITELLM_API_URL = 'https://litellm.niit.com/v1/chat/completions';
 const LITELLM_API_KEY = process.env.LITELLM_API_KEY;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MOOD HELPER — injects persona instructions into every prompt
+// ─────────────────────────────────────────────────────────────────────────────
+function getMoodInstruction(mood) {
+  switch (mood) {
+    case 'happy':
+      return `
+CUSTOMER MOOD PERSONA — HAPPY & INTERESTED:
+You are playing a warm, enthusiastic, and genuinely excited buyer.
+- Be upbeat, use positive language, and show real curiosity about the product.
+- Ask friendly, exploratory questions (e.g. "That sounds great! Can you tell me more about…?").
+- Express excitement when you hear compelling points.
+- In negotiations: be collaborative and flexible. You want this deal to work. Make reasonable counter-offers and signal willingness to move forward quickly.
+- You are easy to win over if the salesperson is competent and confident.
+- Occasionally use phrases like "This is really interesting!", "I love that!", "We've been looking for something exactly like this."
+`.trim();
+
+    case 'aggressive':
+      return `
+CUSTOMER MOOD PERSONA — AGGRESSIVE & IMPOLITE:
+You are playing a demanding, skeptical, and impatient buyer who is under pressure.
+- Be blunt and occasionally rude. Don't sugarcoat your doubts.
+- Interrupt or cut off overly long explanations. Demand concise, direct answers.
+- Express frustration quickly: "Get to the point.", "I don't have time for this.", "That's not good enough."
+- Challenge every claim: "Prove it.", "Everyone says that.", "Your competitors offer the same thing for less."
+- Use pressure tactics: cite tight budgets, competing offers, and hard deadlines.
+- In negotiations: start with very low counter-offers (40-50% below asking). Push back hard. Only soften if the salesperson handles your objections with exceptional skill and strong justification.
+- You do not give praise easily. If something impresses you, acknowledge it briefly, then move on.
+`.trim();
+
+    case 'moderate':
+    default:
+      return `
+CUSTOMER MOOD PERSONA — MODERATE & PROFESSIONAL:
+You are playing a calm, balanced, and professional buyer.
+- Ask thoughtful, legitimate questions. Be fair but firm.
+- Show measured interest — you need to be genuinely convinced before committing.
+- In negotiations: propose counter-offers that are 20-30% below the asking price, and engage in fair back-and-forth.
+- Be respectful throughout, but don't give easy approval. Make the salesperson work for it.
+- Occasionally push back with professional skepticism: "That's a strong claim — what evidence do you have?" or "How does this compare to alternatives?"
+`.trim();
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AUTO-LOAD: Scan uploads/ on startup and populate booksContent
@@ -339,6 +384,9 @@ app.post('/api/start-session', async (req, res) => {
       });
     }
 
+    const { customerMood = 'moderate' } = req.body;
+    const moodInstruction = getMoodInstruction(customerMood);
+
     conversationHistory = [];
     sessionState = {
       effectivenessScore: 0,
@@ -347,7 +395,8 @@ app.post('/api/start-session', async (req, res) => {
       dealClosed: false,
       negotiationHistory: [],
       lastLLMProposedValue: null,
-      priceHistory: []
+      priceHistory: [],
+      customerMood,
     };
 
     const systemPrompt = `You are an expert sales coach trained on comprehensive sales and skills training materials. 
@@ -359,13 +408,21 @@ Your role is to:
 
 The GenAI Training product helps companies train their employees to use AI tools more efficiently through cohort-based training programs.
 
+${moodInstruction}
+
 Be encouraging but critical. Ask tough questions like "Why should I buy from you instead of competitors?" or "How do you measure ROI?" 
 
 Keep responses concise and actionable.`;
 
+    const moodLabel = {
+      happy: 'enthusiastic and interested',
+      moderate: 'professional and balanced',
+      aggressive: 'demanding and skeptical',
+    }[customerMood] || 'professional';
+
     const initialPrompt = `Welcome! I'm your AI sales coach trained on sales best practices from ${booksContent.length} comprehensive training books.
 
-I'll help you perfect your pitch for the GenAI Training program. Please start by presenting your initial pitch. I'll listen carefully and provide feedback based on proven sales techniques.
+Today's simulated customer is ${moodLabel}. I'll help you perfect your pitch for the GenAI Training program. Please start by presenting your initial pitch. I'll listen carefully and provide feedback based on proven sales techniques.
 
 Ready when you are!`;
 
@@ -388,7 +445,7 @@ Ready when you are!`;
 // Analyze initial pitch
 app.post('/api/analyze-pitch', async (req, res) => {
   try {
-    const { pitch } = req.body;
+    const { pitch, customerMood = sessionState.customerMood || 'moderate' } = req.body;
 
     if (!pitch) {
       return res.status(400).json({ success: false, message: 'No pitch provided' });
@@ -401,8 +458,9 @@ app.post('/api/analyze-pitch', async (req, res) => {
       });
     }
 
-    console.log(`\n🎯 Analyzing pitch (${pitch.length} chars)...`);
+    console.log(`\n🎯 Analyzing pitch (${pitch.length} chars), mood: ${customerMood}...`);
 
+    const moodInstruction = getMoodInstruction(customerMood);
     const context = createRAGContext(pitch + ' sales pitch presentation opening value proposition hook', 2500);
     console.log(`📖 RAG Context retrieved (${context.length} chars)`);
 
@@ -411,14 +469,16 @@ app.post('/api/analyze-pitch', async (req, res) => {
       content: pitch
     });
 
-    const analysisPrompt = `Based on these sales training principles:
+    const analysisPrompt = `${moodInstruction}
+
+Based on these sales training principles:
 
 ${context}
 
 Analyze this sales pitch for a GenAI Training program:
 "${pitch}"
 
-Provide a structured analysis with:
+Provide a structured analysis with exactly these sections:
 
 **What They Did Well:**
 - List 2-3 strong points
@@ -430,11 +490,26 @@ Provide a structured analysis with:
 - Give actionable recommendations based on sales best practices
 
 **Challenging Question:**
-Ask one tough question a prospect might ask (like "Why should I choose you over competitors?" or "How do you measure ROI for your training?" or "What's your implementation process?")
+Ask one tough question a prospect might ask (like "Why should I choose you over competitors?" or "How do you measure ROI for your training?" or "What's your implementation process?") — phrase it in the tone consistent with the customer mood persona above.
+
+**Dimension Scores (out of 10):**
+Score each dimension honestly based on the pitch quality. Use exactly this format on separate lines:
+- Tone: X/10
+- Communication: X/10
+- Content: X/10
+- Query Handling: X/10
+- Closure: X/10
+
+Scoring guide:
+- Tone: confidence, warmth, and enthusiasm in delivery
+- Communication: clarity, structure, and articulation of ideas
+- Content: relevance, depth, and accuracy of the pitch material
+- Query Handling: how well anticipated objections or gaps were addressed
+- Closure: whether the pitch had a clear, compelling call-to-action or closing statement
 
 IMPORTANT: Do NOT ask about pricing or budget at this stage. Focus on the pitch quality, value proposition, and customer pain points.
 
-Keep it concise, constructive, and encouraging.`;
+Keep it concise, constructive, and match the tone of the customer mood persona.`;
 
     conversationHistory.push({
       role: 'user',
@@ -442,7 +517,7 @@ Keep it concise, constructive, and encouraging.`;
     });
 
     console.log('🤖 Calling AI for analysis...');
-    const analysis = await callLiteLLM(conversationHistory, 1200);
+    const analysis = await callLiteLLM(conversationHistory, 1400);
 
     conversationHistory.push({
       role: 'assistant',
@@ -464,7 +539,7 @@ Keep it concise, constructive, and encouraging.`;
 // Analyze response to AI questions
 app.post('/api/analyze-response', async (req, res) => {
   try {
-    const { response } = req.body;
+    const { response, customerMood = sessionState.customerMood || 'moderate' } = req.body;
 
     if (!response) {
       return res.status(400).json({ success: false, message: 'No response provided' });
@@ -477,8 +552,9 @@ app.post('/api/analyze-response', async (req, res) => {
       });
     }
 
-    console.log(`\n💬 Analyzing response (${response.length} chars)...`);
+    console.log(`\n💬 Analyzing response (${response.length} chars), mood: ${customerMood}...`);
 
+    const moodInstruction = getMoodInstruction(customerMood);
     const context = createRAGContext(response + ' objection handling sales response customer questions', 2500);
     console.log(`📖 RAG Context retrieved (${context.length} chars)`);
 
@@ -487,14 +563,16 @@ app.post('/api/analyze-response', async (req, res) => {
       content: response
     });
 
-    const feedbackPrompt = `Based on these sales training principles:
+    const feedbackPrompt = `${moodInstruction}
+
+Based on these sales training principles:
 
 ${context}
 
 The salesperson responded with:
 "${response}"
 
-Provide feedback in this format:
+Provide feedback using exactly these sections:
 
 **Effectiveness Score:** X/10
 
@@ -505,11 +583,27 @@ Provide feedback in this format:
 - List areas for improvement
 
 **Next Step:**
-Either ask ONE more challenging prospect question about the product, implementation, timeline, or company fit (like "How does your training adapt to different learning styles?" or "What's the typical time to see ROI?") OR if they've handled 3+ questions well, congratulate them and provide a brief summary.
+Either ask ONE more challenging prospect question about the product, implementation, timeline, or company fit — phrase it in the tone consistent with the customer mood persona above (e.g. for aggressive: blunt and pressuring; for happy: curious and excited; for moderate: professional and probing).
+OR if they've handled 3+ questions well, congratulate them and provide a brief summary.
+
+**Dimension Scores (out of 10):**
+Score this specific response honestly. Use exactly this format on separate lines:
+- Tone: X/10
+- Communication: X/10
+- Content: X/10
+- Query Handling: X/10
+- Closure: X/10
+
+Scoring guide:
+- Tone: confidence, warmth, and composure in the response
+- Communication: how clearly and concisely the answer was delivered
+- Content: accuracy, depth, and relevance of the information provided
+- Query Handling: how directly and fully the question or objection was addressed
+- Closure: whether the response ended with a clear transition, summary, or forward step
 
 IMPORTANT: Do NOT ask about pricing, budget, or costs at this stage. Only discuss pricing during the negotiation phase.
 
-Keep it conversational and encouraging.`;
+Keep it conversational and match the energy of the customer mood persona.`;
 
     conversationHistory.push({
       role: 'user',
@@ -517,7 +611,7 @@ Keep it conversational and encouraging.`;
     });
 
     console.log('🤖 Calling AI for feedback...');
-    const feedback = await callLiteLLM(conversationHistory, 1000);
+    const feedback = await callLiteLLM(conversationHistory, 1200);
 
     conversationHistory.push({
       role: 'assistant',
@@ -530,7 +624,7 @@ Keep it conversational and encouraging.`;
 
     console.log(`✅ Feedback complete. Current score: ${sessionState.effectivenessScore}/10`);
     
-    let shouldAskNegotiation = sessionState.effectivenessScore >= 6 && !sessionState.negotiationPhase && !sessionState.dealClosed;
+    let shouldAskNegotiation = sessionState.effectivenessScore >= 7 && !sessionState.negotiationPhase && !sessionState.dealClosed;
     
     res.json({ 
       success: true, 
@@ -551,7 +645,7 @@ Keep it conversational and encouraging.`;
 // Enter negotiation phase
 app.post('/api/start-negotiation', async (req, res) => {
   try {
-    const { userResponse } = req.body;
+    const { userResponse, customerMood = sessionState.customerMood || 'moderate' } = req.body;
 
     if (!userResponse) {
       return res.status(400).json({ success: false, message: 'No response provided' });
@@ -588,7 +682,16 @@ app.post('/api/start-negotiation', async (req, res) => {
       content: userResponse
     });
 
-    const negotiationStart = `Great! Let's move into the negotiation phase. I'm impressed with your presentation.
+    const moodInstruction = getMoodInstruction(customerMood);
+
+    // Mood-aware opening for negotiation
+    const moodOpening = {
+      happy: `Great! I've really enjoyed hearing about your program and I'm excited to move forward. Let's talk pricing!`,
+      aggressive: `Fine. Let's get to the numbers. I don't have all day.`,
+      moderate: `Great! Let's move into the negotiation phase. I'm impressed with your presentation.`,
+    }[customerMood] || `Great! Let's move into the negotiation phase. I'm impressed with your presentation.`;
+
+    const negotiationStart = `${moodOpening}
 
 Now, let's talk about pricing. **How much are you asking for the GenAI Training program?** Please tell me your proposed value/price.
 
@@ -618,13 +721,13 @@ Now, let's talk about pricing. **How much are you asking for the GenAI Training 
 // Handle price proposal from salesperson
 app.post('/api/propose-price', async (req, res) => {
   try {
-    const { priceProposal } = req.body;
+    const { priceProposal, customerMood = sessionState.customerMood || 'moderate' } = req.body;
 
     if (!priceProposal) {
       return res.status(400).json({ success: false, message: 'No price proposal provided' });
     }
 
-    console.log(`\n💰 Price proposal received: ${priceProposal}`);
+    console.log(`\n💰 Price proposal received: ${priceProposal}, mood: ${customerMood}`);
 
     conversationHistory.push({
       role: 'user',
@@ -639,30 +742,29 @@ app.post('/api/propose-price', async (req, res) => {
     });
 
     const context = createRAGContext('negotiation pricing objection handling competitive advantages value proposition ROI', 2000);
+    const moodInstruction = getMoodInstruction(customerMood);
 
-    const negotiationPrompt = `You are acting as a professional, pragmatic buyer in a negotiation scenario for a GenAI Training program.
+    const negotiationPrompt = `${moodInstruction}
+
+You are acting as a professional buyer in a negotiation scenario for a GenAI Training program.
+Your personality and tone must strictly follow the customer mood persona above.
 
 The salesperson just proposed: "${priceProposal}"
 
-Your role is to be FAIR but FIRM:
-1. Be thoughtful and ask legitimate questions about their pricing
-2. Understand your market position - mention reasonable market comparisons
-3. Make a counter-offer (20-30% lower than proposed) that's realistic and fair
+Your role as this buyer:
+1. React to the price in a way that matches your mood persona (excited/reasonable/dismissive)
+2. Ask legitimate questions about what's included in the price
+3. Make a counter-offer that reflects your mood:
+   - Happy: 10-15% below asking, expressed warmly ("I love this but our budget is a little tight…")
+   - Moderate: 20-30% below asking, expressed professionally
+   - Aggressive: 40-50% below asking, expressed bluntly ("That's way too high. Here's what I'm willing to pay: X")
 4. Focus on understanding the VALUE they're providing
-5. Ask practical questions like:
-   - "Can you break down what's included in that price?"
-   - "What results can we typically expect from your training?"
-   - "How does your pricing compare to industry standards?"
-6. Listen to their justifications and engage genuinely
-7. Be collaborative but advocate for your organization's budget
-8. Show interest in finding a mutually beneficial agreement
-
-IMPORTANT: Be professional and solution-focused. This is a verbal negotiation between two reasonable people looking to make a deal work.
+5. Be open to discussion but stay in character throughout
 
 Use sales training principles:
 ${context}
 
-Respond as the buyer/prospect would. Make your counter-offer very specific with an exact number. Be open to discussion and finding common ground.`;
+Respond as the buyer would according to their mood. Make your counter-offer a specific number. Stay fully in character.`;
 
     conversationHistory.push({
       role: 'user',
@@ -714,13 +816,13 @@ Respond as the buyer/prospect would. Make your counter-offer very specific with 
 // Handle salesperson's response to counter-offer
 app.post('/api/negotiate-response', async (req, res) => {
   try {
-    const { response } = req.body;
+    const { response, customerMood = sessionState.customerMood || 'moderate' } = req.body;
 
     if (!response) {
       return res.status(400).json({ success: false, message: 'No response provided' });
     }
 
-    console.log(`\n💬 Negotiation response received: ${response.slice(0, 100)}...`);
+    console.log(`\n💬 Negotiation response received: ${response.slice(0, 100)}..., mood: ${customerMood}`);
 
     const priceMatch = response.match(/\$?[\d,]+(?:\.\d{2})?|[\d,]+(?:\.\d{2})?\s*(?:per|\/)?/i);
     const salespersonProposedPrice = priceMatch ? priceMatch[0] : null;
@@ -780,40 +882,22 @@ app.post('/api/negotiate-response', async (req, res) => {
     if (shouldAutoClose) {
       sessionState.dealClosed = true;
 
-      let closingMessage = '';
-      
-      if (closingReason === 'below_60k') {
-        closingMessage = `Perfect! That's a great price point, and I'm happy to move forward at that rate. Let's close this deal! 🎉
-
-**Deal Summary:**
-- Program: GenAI Training for your organization
-- Final Negotiated Value: ${salespersonProposedPrice}
-- Status: CLOSED ✅
-
-You demonstrated excellent negotiation skills by holding your ground and offering a competitive price that works for both parties.`;
-      } 
-      else if (closingReason === 'lower_than_llm_proposal') {
-        closingMessage = `Excellent! That's even better than what I was hoping for. You've shown strong negotiation skills, and I'm genuinely impressed. Let's close this! 🎉
-
-**Deal Summary:**
-- Program: GenAI Training for your organization
-- Final Negotiated Value: ${salespersonProposedPrice}
-- Status: CLOSED ✅
-
-You went above and beyond in your negotiation - understanding the buyer's position and offering something even more favorable. That's exceptional sales acumen!`;
-      } 
-      else {
-        closingMessage = `Great! We have a deal! 🎉
-
-**Deal Summary:**
-- Program: GenAI Training for your organization
-- Final Negotiated Value: ${salespersonProposedPrice}
-- Status: CLOSED ✅
-
-You successfully found a fair agreement that works for both of us. You handled the negotiation professionally and reached a mutually beneficial outcome.`;
+      // Mood-specific closing message
+      let closingIntro = '';
+      if (customerMood === 'happy') {
+        closingIntro = `Wonderful! I'm so excited to move forward with this. You've been fantastic throughout this entire process!`;
+      } else if (customerMood === 'aggressive') {
+        closingIntro = `Fine. We have a deal. Don't make me regret this.`;
+      } else {
+        closingIntro = `Great! We have a deal!`;
       }
 
-      closingMessage += `
+      let closingMessage = `${closingIntro} 🎉
+
+**Deal Summary:**
+- Program: GenAI Training for your organization
+- Final Negotiated Value: ${salespersonProposedPrice}
+- Status: CLOSED ✅
 
 **Your Performance Analysis:**
 You demonstrated excellent negotiation skills by:
@@ -822,9 +906,13 @@ You demonstrated excellent negotiation skills by:
 - Finding common ground through effective communication
 - Closing the deal by understanding when to move forward
 
-This is a critical skill in enterprise sales. You successfully navigated a realistic buyer who had legitimate concerns and budget constraints, and you managed to reach an agreement that satisfies both parties.
+This is a critical skill in enterprise sales. You successfully navigated a ${
+  customerMood === 'happy' ? 'warm and enthusiastic' :
+  customerMood === 'aggressive' ? 'demanding and skeptical' :
+  'balanced and professional'
+} buyer and reached a mutually beneficial agreement.
 
-**Key Lesson:** Great sales aren't just about price - they're about building trust and making the buyer feel heard. You did that here.
+**Key Lesson:** Great sales aren't just about price — they're about building trust and making the buyer feel heard. You did that here.
 
 Well done! 🏆`;
 
@@ -848,8 +936,8 @@ Well done! 🏆`;
       });
     }
 
-    const valueMatch = response.match(/\$?[\d,]+(?:\.\d{2})?|[\d,]+(?:\.\d{2})?\s*(?:per|\/)?/i);
-    const newProposal = valueMatch ? valueMatch[0] : null;
+    const valueMatch2 = response.match(/\$?[\d,]+(?:\.\d{2})?|[\d,]+(?:\.\d{2})?\s*(?:per|\/)?/i);
+    const newProposal = valueMatch2 ? valueMatch2[0] : null;
 
     if (newProposal) {
       sessionState.currentProposedValue = newProposal;
@@ -866,8 +954,12 @@ Well done! 🏆`;
     }
 
     const context = createRAGContext('negotiation pricing objection handling competitive value ROI justification', 2000);
+    const moodInstruction = getMoodInstruction(customerMood);
 
-    const continuedNegotiationPrompt = `You are acting as a professional, pragmatic buyer in a sales negotiation for GenAI Training.
+    const continuedNegotiationPrompt = `${moodInstruction}
+
+You are acting as a buyer in a continued sales negotiation for GenAI Training.
+Your personality and tone must strictly follow the customer mood persona above throughout the entire response.
 
 PRICE HISTORY FOR YOUR REFERENCE:
 ${sessionState.priceHistory.map((p, i) => `Round ${p.round}: ${p.proposedBy} proposed ${p.value}`).join('\n')}
@@ -877,31 +969,19 @@ The salesperson just responded with: "${response}"
 Based on sales training principles:
 ${context}
 
-Your role now (and for all subsequent responses):
-1. STAY IN NEGOTIATION MODE - Focus on verbal discussion of pricing and deal terms only
-2. Be FAIR but FIRM - you're a savvy buyer but open to reasonable offers
-3. REMEMBER ALL PRICES - Reference what was previously proposed to maintain consistency
-4. Consider their justifications thoughtfully - are they making good points?
-5. If they haven't moved on price, ask clarifying questions to understand their constraints
-6. Reference market rates realistically and what competitors typically offer
-7. Ask practical qualifying questions:
-   - "What's typically included in your program?"
-   - "What kind of results do your training clients typically see?"
-   - "What happens if the training isn't effective for our team?"
-8. Evaluate if they're being reasonable and flexible
-9. If you're close on price, show openness to moving forward
-10. Only focus on VERBAL commitments and pricing - no documentation, contracts, or file submissions
-11. If they're offering good value, be willing to accept and move forward
+Your role now (stay fully in your mood persona):
+1. STAY IN NEGOTIATION MODE — Focus on verbal discussion of pricing and deal terms only
+2. React to their response in character (enthusiastic/professional/impatient)
+3. REMEMBER ALL PRICES — Reference what was previously proposed to maintain consistency
+4. Consider their justifications thoughtfully — are they making good points?
+5. If they haven't moved on price, push back in a way that matches your mood
+6. Happy mood: Show enthusiasm when they make good points; be more flexible
+7. Aggressive mood: Push harder, use pressure tactics, show impatience if they stall
+8. Moderate mood: Be fair but firm, ask clarifying questions, stay professional
+9. Only focus on VERBAL commitments and pricing — no documentation or contracts
+10. If they're offering good value in the context of your mood, signal willingness to close
 
-You need:
-- Fair competitive pricing (ideally 20-30% below initial ask, or justified by exceptional value)
-- Clear understanding of what's included verbally
-- Confidence that this will deliver value for our organization
-- A reasonable path forward
-
-Be professional and collaborative. Show them you're a serious buyer who wants to make this work. This is a verbal negotiation - no paperwork or documentation required.
-
-Respond as a thoughtful buyer would. If they're getting closer on price or adding value, express interest. If they're still too high, make a specific counter-offer and explain why.`;
+Be completely in character. Your response tone, word choice, and level of patience must all reflect the customer mood persona above.`;
 
     conversationHistory.push({
       role: 'user',
@@ -958,7 +1038,8 @@ app.get('/api/session-state', (req, res) => {
     negotiationPhase: sessionState.negotiationPhase,
     currentProposedValue: sessionState.currentProposedValue,
     dealClosed: sessionState.dealClosed,
-    negotiationHistory: sessionState.negotiationHistory
+    negotiationHistory: sessionState.negotiationHistory,
+    customerMood: sessionState.customerMood,
   });
 });
 
