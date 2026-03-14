@@ -28,12 +28,31 @@ const OFF_CONTEXT_SIGNALS = [
 ];
 
 const RUDE_PATTERNS = [
-  /you can leave/i, /get out/i, /go away/i, /not here to help/i, /i don'?t care/i,
-  /leave me alone/i, /stop (talking|bothering|calling)/i, /shut up/i,
-  /waste of (my )?time/i, /i hate (you|this|your)/i,
-  /you'?re (useless|terrible|awful|horrible)/i, /never (buy|purchase|use)/i,
-  /hang(ing)? up/i, /goodbye forever/i, /do not (call|contact) (me|us) again/i,
+  /can (you |please )?(leave|go|stop|exit)/i,       // "can you leave", "can you go", etc.
+  /please (leave|go away|stop)/i,
+  /you can leave/i,
+  /get out/i,
+  /go away/i,
+  /not here to help/i,
+  /i don'?t care/i,
+  /leave me alone/i,
+  /stop (talking|bothering|calling)/i,
+  /shut up/i,
+  /waste of (my )?time/i,
+  /i hate (you|this|your)/i,
+  /you'?re (useless|terrible|awful|horrible|pathetic|ridiculous)/i,
+  /never (buy|purchase|use)/i,
+  /hang(ing)? up/i,
+  /goodbye forever/i,
+  /do not (call|contact) (me|us) again/i,
+  /not interested (anymore|at all)/i,
+  /this is pointless/i,
+  /stop wasting my time/i,
   /f[\*u]ck (off|you|this)/i,
+  /get (lost|out of here)/i,
+  /i'?m done (with this|talking)/i,
+  /you'?re (fired|dismissed)/i,
+  /end this (call|meeting|conversation)/i,
 ];
 
 export default function PracticePage({ uploadedBooks }) {
