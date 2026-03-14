@@ -150,3 +150,75 @@
   margin: 0;
   opacity: 0.6;
 }
+
+/* ══════════════════════════════════════════════════════════
+   MOBILE — full-width inside collapsible panel
+══════════════════════════════════════════════════════════ */
+@media (max-width: 600px) {
+  .mood-panel {
+    width: 100%;
+    padding: 14px 12px;
+    border-bottom: none;
+  }
+
+  /* Side-by-side cards on mobile */
+  .mood-cards {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 6px;
+  }
+
+  .mood-card {
+    padding: 8px 6px;
+  }
+
+  .mood-card-row {
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    text-align: center;
+  }
+
+  .mood-avatar {
+    width: 28px;
+    height: 28px;
+  }
+
+  .mood-text {
+    align-items: center;
+  }
+
+  .mood-label {
+    font-size: 10px;
+    text-align: center;
+    white-space: normal;
+    line-height: 1.2;
+  }
+
+  .mood-subdesc {
+    display: none;
+  }
+
+  .mood-active-dot {
+    display: none;
+  }
+
+  .mood-description-box {
+    padding: 8px 10px;
+  }
+
+  .mood-desc-text {
+    font-size: 10.5px;
+  }
+}
+
+@media (max-width: 380px) {
+  .mood-label {
+    font-size: 9px;
+  }
+
+  .mood-avatar {
+    width: 24px;
+    height: 24px;
+  }
+}

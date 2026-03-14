@@ -36,6 +36,11 @@
   animation: pulse-ring 1.2s ease infinite;
 }
 
+@keyframes pulse-ring {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.5; transform: scale(0.8); }
+}
+
 .scores-panel-body {
   flex: 1;
   overflow-y: auto;
@@ -242,3 +247,46 @@
 }
 
 .scores-footer-dot { opacity: 0.4; }
+
+/* ══════════════════════════════════════════════════════════
+   MOBILE — panel used inside collapsible sheet
+══════════════════════════════════════════════════════════ */
+@media (max-width: 600px) {
+  .scores-panel {
+    width: 100%;
+    height: auto;
+    border-radius: 0;
+    border: none;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .scores-panel-body {
+    padding: 0.75rem;
+  }
+
+  .overall-ring {
+    width: 64px;
+    height: 64px;
+  }
+
+  .overall-num {
+    font-size: 1.1rem;
+  }
+
+  /* Horizontal scrollable metrics on very small screens */
+  .scores-list {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.65rem;
+  }
+
+  .score-metric-desc {
+    display: none; /* Save space on mobile */
+  }
+}
+
+@media (max-width: 340px) {
+  .scores-list {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Mic, MicOff, RotateCcw, Send, DollarSign } from 'lucide-react';
+import { Mic, MicOff, RotateCcw, Send, DollarSign, BarChart2, X, Smile } from 'lucide-react';
 import ChatMessage from '../components/ChatMessage';
 import ScoresPanel from '../components/ScoresPanel';
 import CustomerMoodPanel from '../components/CustomerMoodPanel';
@@ -17,45 +17,22 @@ const EMPTY_SCORES = {
   closure: null,
 };
 
-// How many off-context strikes before the deal is lost
 const OFF_CONTEXT_LIMIT = 3;
 
-// Phrases that signal the AI flagged the response as off-topic
 const OFF_CONTEXT_SIGNALS = [
-  /not relevant/i,
-  /out of context/i,
-  /off.?topic/i,
-  /doesn'?t address/i,
-  /did not answer/i,
-  /failed to address/i,
-  /not related/i,
-  /unrelated/i,
-  /missed the (point|question)/i,
-  /doesn'?t answer/i,
-  /avoid(ed|ing) the question/i,
-  /not answer(ing|ed) my question/i,
-  /that('?s| is) not what I asked/i,
-  /please (stay|keep it) (on topic|relevant|focused)/i,
-  /irrelevant/i,
+  /not relevant/i, /out of context/i, /off.?topic/i, /doesn'?t address/i,
+  /did not answer/i, /failed to address/i, /not related/i, /unrelated/i,
+  /missed the (point|question)/i, /doesn'?t answer/i, /avoid(ed|ing) the question/i,
+  /not answer(ing|ed) my question/i, /that('?s| is) not what I asked/i,
+  /please (stay|keep it) (on topic|relevant|focused)/i, /irrelevant/i,
 ];
 
-// Rude / dismissive patterns → instant deal lost
 const RUDE_PATTERNS = [
-  /you can leave/i,
-  /get out/i,
-  /go away/i,
-  /not here to help/i,
-  /i don'?t care/i,
-  /leave me alone/i,
-  /stop (talking|bothering|calling)/i,
-  /shut up/i,
-  /waste of (my )?time/i,
-  /i hate (you|this|your)/i,
-  /you'?re (useless|terrible|awful|horrible)/i,
-  /never (buy|purchase|use)/i,
-  /hang(ing)? up/i,
-  /goodbye forever/i,
-  /do not (call|contact) (me|us) again/i,
+  /you can leave/i, /get out/i, /go away/i, /not here to help/i, /i don'?t care/i,
+  /leave me alone/i, /stop (talking|bothering|calling)/i, /shut up/i,
+  /waste of (my )?time/i, /i hate (you|this|your)/i,
+  /you'?re (useless|terrible|awful|horrible)/i, /never (buy|purchase|use)/i,
+  /hang(ing)? up/i, /goodbye forever/i, /do not (call|contact) (me|us) again/i,
   /f[\*u]ck (off|you|this)/i,
 ];
 
@@ -68,17 +45,19 @@ export default function PracticePage({ uploadedBooks }) {
   const [dealClosed, setDealClosed] = useState(false);
   const [dealLost, setDealLost] = useState(false);
   const [dealLostReason, setDealLostReason] = useState('');
-
-  // Off-context strike counter
   const [offContextCount, setOffContextCount] = useState(0);
-
   const [customerMood, setCustomerMood] = useState('moderate');
   const [scores, setScores] = useState({ ...EMPTY_SCORES });
   const [scoreRound, setScoreRound] = useState(0);
   const [scoresUpdating, setScoresUpdating] = useState(false);
 
+  // Mobile popup state
+  const [fabOpen, setFabOpen] = useState(false);
+  const [fabTab, setFabTab] = useState('scores'); // 'scores' | 'mood'
+
   const messagesEndRef = useRef(null);
-  const offContextRef = useRef(0); // use ref for immediate access inside async handlers
+  const offContextRef = useRef(0);
+  const popupRef = useRef(null);
 
   const { transcript, isRecording, startRecording, stopRecording, clearTranscript } =
     useSpeechRecognition();
@@ -86,6 +65,22 @@ export default function PracticePage({ uploadedBooks }) {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isAnalyzing]);
+
+  // Close popup on outside tap
+  useEffect(() => {
+    if (!fabOpen) return;
+    const handler = (e) => {
+      if (popupRef.current && !popupRef.current.contains(e.target)) {
+        setFabOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    document.addEventListener('touchstart', handler);
+    return () => {
+      document.removeEventListener('mousedown', handler);
+      document.removeEventListener('touchstart', handler);
+    };
+  }, [fabOpen]);
 
   const addMessages = (...newMsgs) =>
     setMessages(prev => [...prev, ...newMsgs]);
@@ -107,58 +102,39 @@ export default function PracticePage({ uploadedBooks }) {
     }
   };
 
-  // Check if the AI feedback text signals an off-topic response
-  const isOffContextFeedback = (text) =>
-    OFF_CONTEXT_SIGNALS.some(re => re.test(text));
+  const isOffContextFeedback = (text) => OFF_CONTEXT_SIGNALS.some(re => re.test(text));
+  const isRudeOrDismissive   = (text) => RUDE_PATTERNS.some(re => re.test(text));
 
-  // Check if the user's own input is rude/dismissive
-  const isRudeOrDismissive = (text) =>
-    RUDE_PATTERNS.some(re => re.test(text));
-
-  // Trigger deal lost with a reason
   const triggerDealLost = (reason, customerMessage) => {
     setDealLost(true);
     setDealLostReason(reason);
-    addMessages({
-      role: 'assistant',
-      content: customerMessage,
-      type: 'deal-lost',
-    });
+    addMessages({ role: 'assistant', content: customerMessage, type: 'deal-lost' });
   };
 
-  // Handle off-context strike — warn or lose deal
   const handleOffContextStrike = (userText) => {
     const newCount = offContextRef.current + 1;
     offContextRef.current = newCount;
     setOffContextCount(newCount);
-
     const remaining = OFF_CONTEXT_LIMIT - newCount;
 
     if (newCount >= OFF_CONTEXT_LIMIT) {
-      // Strike limit hit — walk away
       addMessages({ role: 'user', content: userText });
       setTimeout(() => {
         triggerDealLost(
           `Went off-topic ${OFF_CONTEXT_LIMIT} times`,
-          "I've tried to stay engaged, but your responses keep missing the point of my questions. I don't think we're a good fit. I'm going to pass on this. Goodbye."
+          "I've tried to stay engaged, but your responses keep missing the point. Goodbye."
         );
       }, 500);
-      return true; // deal lost triggered
+      return true;
     } else {
-      // Issue a warning message inline
       const warningMsg = remaining === 1
         ? `⚠️ Your response didn't address my question. This is your last chance — one more off-topic answer and I'm walking away.`
         : `⚠️ Your response didn't address my question. Please stay focused. (${remaining} warning${remaining > 1 ? 's' : ''} remaining)`;
-
       addMessages({ role: 'user', content: userText });
       setTimeout(() => {
-        addMessages({
-          role: 'assistant',
-          content: warningMsg,
-          type: 'off-context-warning',
-        });
+        addMessages({ role: 'assistant', content: warningMsg, type: 'off-context-warning' });
       }, 400);
-      return false; // deal not lost yet
+      return false;
     }
   };
 
@@ -172,7 +148,7 @@ export default function PracticePage({ uploadedBooks }) {
       const data = await res.json();
       setMessages([{
         role: 'assistant',
-        content: data.initialPrompt || "Welcome! I'm your AI sales coach. Start by recording your pitch for the GenAI Training program.",
+        content: data.initialPrompt || "Welcome! I'm your AI sales coach. Start by recording your pitch.",
         type: 'intro',
       }]);
       setSessionStarted(true);
@@ -195,6 +171,7 @@ export default function PracticePage({ uploadedBooks }) {
     setScores({ ...EMPTY_SCORES });
     setScoreRound(0);
     setCustomerMood('moderate');
+    setFabOpen(false);
     clearTranscript();
     if (isRecording) stopRecording();
   };
@@ -224,14 +201,11 @@ export default function PracticePage({ uploadedBooks }) {
       const lastMsg = messages[messages.length - 1];
       const isNegotiationPrompt = lastMsg?.type === 'negotiation-prompt';
 
-      // ── 1. Rude / dismissive → instant deal lost ──
       if (isRudeOrDismissive(text)) {
         addMessages({ role: 'user', content: text });
         setTimeout(() => {
-          triggerDealLost(
-            'Unprofessional behavior',
-            "I'm sorry, but this conversation is over. Your approach was unprofessional and I will not be making a purchase. Goodbye."
-          );
+          triggerDealLost('Unprofessional behavior',
+            "I'm sorry, but this conversation is over. Your approach was unprofessional. Goodbye.");
         }, 500);
         setIsAnalyzing(false);
         return;
@@ -297,34 +271,24 @@ export default function PracticePage({ uploadedBooks }) {
       } else {
         const data = await postJSON('/api/analyze-response', { response: text });
 
-        // ── 2. Backend signals deal lost ──
         if (data.dealLost) {
           addMessages({ role: 'user', content: text });
           triggerDealLost('Customer lost interest', data.feedback);
 
-        // ── 3. Off-context detection from AI feedback ──
         } else if (isOffContextFeedback(data.feedback)) {
           const lost = handleOffContextStrike(text);
           if (!lost) {
-            // Still show feedback even on warning
             setTimeout(() => {
-              addMessages({
-                role: 'assistant',
-                content: data.feedback,
-                type: 'feedback',
-              });
+              addMessages({ role: 'assistant', content: data.feedback, type: 'feedback' });
               updateScoresFromText(data.feedback);
             }, 900);
           }
 
         } else {
-          // ── 4. Normal flow — reset off-context streak on good answer ──
-          // Only reset if this was a genuine on-topic response
           if (offContextRef.current > 0) {
             offContextRef.current = 0;
             setOffContextCount(0);
           }
-
           addMessages(
             { role: 'user', content: text },
             { role: 'assistant', content: data.feedback, type: 'feedback' }
@@ -350,56 +314,54 @@ export default function PracticePage({ uploadedBooks }) {
   };
 
   const getPhaseLabel = () => {
-    if (dealLost) return { label: 'Deal Lost', color: 'var(--danger)' };
-    if (dealClosed) return { label: 'Session complete', color: 'var(--accent)' };
-    if (negotiationPhase) return { label: 'Negotiation', color: 'var(--accent-2)' };
-    if (!sessionStarted) return { label: 'Ready', color: 'var(--text-muted)' };
-    if (messages.length <= 1) return { label: 'Pitch', color: 'var(--purple)' };
-    return { label: 'Q&A', color: 'var(--accent-3)' };
+    if (dealLost)             return { label: 'Deal Lost',   color: 'var(--danger)' };
+    if (dealClosed)           return { label: 'Complete',    color: 'var(--accent)' };
+    if (negotiationPhase)     return { label: 'Negotiation', color: 'var(--accent-2)' };
+    if (!sessionStarted)      return { label: 'Ready',       color: 'var(--text-muted)' };
+    if (messages.length <= 1) return { label: 'Pitch',       color: 'var(--purple)' };
+    return                           { label: 'Q&A',         color: 'var(--accent-3)' };
   };
 
   const phase = getPhaseLabel();
 
   const btnLabel = () => {
-    if (!sessionStarted) return 'Record Your Pitch';
-    if (messages.length <= 1) return 'Record Pitch';
-    if (negotiationPhase) return 'Record Response';
+    if (!sessionStarted)       return 'Record Your Pitch';
+    if (messages.length <= 1)  return 'Record Pitch';
+    if (negotiationPhase)      return 'Record Response';
     return 'Record Answer';
   };
 
-  // Strike indicator dots for sidebar
   const strikeDisplay = sessionStarted && !dealLost && offContextCount > 0;
+  const moodColors = { happy: '#3B6D11', moderate: '#185FA5', aggressive: '#A32D2D' };
+  const moodLabels = { happy: 'Happy', moderate: 'Moderate', aggressive: 'Aggressive' };
+
+  // Has any score been set yet?
+  const hasScores = Object.values(scores).some(v => v !== null);
 
   return (
     <div className="practice-page">
 
-      {/* ── Left Sidebar ──────────────────────────── */}
+      {/* ── Left Sidebar (desktop) ────────────────── */}
       <aside className="practice-sidebar">
         <div className="sidebar-section">
           <div className="sidebar-label">Session Phase</div>
           <div className="phase-badge" style={{
             color: phase.color,
             borderColor: phase.color + '33',
-            background: phase.color + '11'
+            background: phase.color + '11',
           }}>
             {phase.label}
           </div>
         </div>
 
-        {/* Off-context strike tracker */}
         {strikeDisplay && (
           <div className="sidebar-section">
             <div className="sidebar-label">Off-Topic Strikes</div>
             <div className="strike-tracker">
               {Array.from({ length: OFF_CONTEXT_LIMIT }).map((_, i) => (
-                <div
-                  key={i}
-                  className={`strike-dot ${i < offContextCount ? 'active' : ''}`}
-                />
+                <div key={i} className={`strike-dot ${i < offContextCount ? 'active' : ''}`} />
               ))}
-              <span className="strike-label">
-                {OFF_CONTEXT_LIMIT - offContextCount} left
-              </span>
+              <span className="strike-label">{OFF_CONTEXT_LIMIT - offContextCount} left</span>
             </div>
           </div>
         )}
@@ -431,6 +393,44 @@ export default function PracticePage({ uploadedBooks }) {
         </div>
       </aside>
 
+      {/* ── Mobile Info Bar ───────────────────────── */}
+      <div className="mobile-info-bar">
+        <div className="mobile-info-chip">
+          <span className="chip-label">Phase:</span>
+          <span style={{ color: phase.color, fontWeight: 700 }}>{phase.label}</span>
+        </div>
+
+        {sessionStarted && (
+          <div className="mobile-info-chip">
+            <span className="chip-label">Mood:</span>
+            <span style={{ color: moodColors[customerMood] }}>{moodLabels[customerMood]}</span>
+          </div>
+        )}
+
+        {currentProposedValue && (
+          <div className="mobile-info-chip">
+            <DollarSign size={10} />
+            <span>{currentProposedValue}</span>
+          </div>
+        )}
+
+        {strikeDisplay && (
+          <div className="mobile-info-chip" style={{ borderColor: 'rgba(252,129,129,0.3)' }}>
+            <span style={{ color: 'var(--danger)' }}>
+              ⚠️ {offContextCount}/{OFF_CONTEXT_LIMIT} strikes
+            </span>
+          </div>
+        )}
+
+        <button
+          className="mobile-info-chip mobile-reset-chip"
+          onClick={startFresh}
+        >
+          <RotateCcw size={10} />
+          Reset
+        </button>
+      </div>
+
       {/* ── Chat Area ─────────────────────────────── */}
       <div className="chat-area">
         <div className="chat-messages">
@@ -452,9 +452,7 @@ export default function PracticePage({ uploadedBooks }) {
                 <div className="chat-message assistant">
                   <div className="msg-avatar">AI</div>
                   <div className="msg-bubble assistant">
-                    <div className="typing-dots">
-                      <span /><span /><span />
-                    </div>
+                    <div className="typing-dots"><span /><span /><span /></div>
                   </div>
                 </div>
               )}
@@ -463,7 +461,7 @@ export default function PracticePage({ uploadedBooks }) {
           )}
         </div>
 
-        {/* Input Area */}
+        {/* Input */}
         {sessionStarted && !dealClosed && !dealLost && (
           <div className="chat-input-area">
             {transcript && (
@@ -477,16 +475,12 @@ export default function PracticePage({ uploadedBooks }) {
                 <button className="ctrl-btn recording" onClick={stopRecording}>
                   <div className="recording-ring" />
                   <MicOff size={16} />
-                  Stop Recording
+                  Stop
                 </button>
               ) : (
-                <button
-                  className="ctrl-btn record"
-                  onClick={startRecording}
-                  disabled={isAnalyzing}
-                >
+                <button className="ctrl-btn record" onClick={startRecording} disabled={isAnalyzing}>
                   <Mic size={16} />
-                  {transcript ? 'Record Again' : btnLabel()}
+                  {transcript ? 'Re-record' : btnLabel()}
                 </button>
               )}
               <button
@@ -499,29 +493,23 @@ export default function PracticePage({ uploadedBooks }) {
               </button>
             </div>
             <p className="chat-hint">
-              {isAnalyzing
-                ? '🤖 AI is analyzing your response…'
-                : isRecording
-                  ? '🎤 Recording — speak naturally, then stop'
-                  : transcript
-                    ? '✅ Ready — submit or record again'
-                    : '🎯 Record your response, then submit'}
+              {isAnalyzing   ? '🤖 AI is analyzing your response…'
+               : isRecording ? '🎤 Recording — speak naturally, then stop'
+               : transcript  ? '✅ Ready — submit or record again'
+               :               '🎯 Record your response, then submit'}
             </p>
           </div>
         )}
 
-        {/* Deal Closed Bar */}
         {dealClosed && !dealLost && (
           <div className="deal-closed-bar">
             <span>🎉 Negotiation complete — great work!</span>
             <button className="fresh-btn" onClick={startFresh}>
-              <RotateCcw size={14} />
-              New Session
+              <RotateCcw size={14} /> New Session
             </button>
           </div>
         )}
 
-        {/* Deal Lost Bar */}
         {dealLost && (
           <div className="deal-lost-bar">
             <div className="deal-lost-left">
@@ -532,27 +520,89 @@ export default function PracticePage({ uploadedBooks }) {
               </div>
             </div>
             <button className="fresh-btn danger" onClick={startFresh}>
-              <RotateCcw size={14} />
-              Try Again
+              <RotateCcw size={14} /> Try Again
             </button>
           </div>
         )}
       </div>
 
-      {/* ── Right Panel (Mood + Scores) ───────────── */}
+      {/* ── Right Panel (desktop) ─────────────────── */}
       <div className="right-panel">
-        
-        <ScoresPanel
-          scores={scores}
-          isUpdating={scoresUpdating}
-          roundCount={scoreRound}
-        />
-
         <CustomerMoodPanel
           selectedMood={customerMood}
           onMoodChange={setCustomerMood}
           disabled={sessionStarted}
         />
+        <ScoresPanel scores={scores} isUpdating={scoresUpdating} roundCount={scoreRound} />
+      </div>
+
+      {/* ══════════════════════════════════════════════
+          MOBILE FAB + POPUP — only rendered on mobile
+      ══════════════════════════════════════════════ */}
+      <div className="mobile-fab-root" ref={popupRef}>
+
+        {/* Popup card */}
+        <div className={`fab-popup ${fabOpen ? 'fab-popup--open' : ''}`}>
+          {/* Popup header with tabs */}
+          <div className="fab-popup-header">
+            <div className="fab-popup-tabs">
+              <button
+                className={`fab-popup-tab ${fabTab === 'scores' ? 'fab-popup-tab--active' : ''}`}
+                onClick={() => setFabTab('scores')}
+              >
+                <BarChart2 size={13} />
+                Performance
+              </button>
+              <button
+                className={`fab-popup-tab ${fabTab === 'mood' ? 'fab-popup-tab--active' : ''}`}
+                onClick={() => setFabTab('mood')}
+              >
+                <Smile size={13} />
+                Mood
+              </button>
+            </div>
+            <button className="fab-popup-close" onClick={() => setFabOpen(false)}>
+              <X size={15} />
+            </button>
+          </div>
+
+          {/* Popup content */}
+          <div className="fab-popup-body">
+            {fabTab === 'scores' && (
+              <ScoresPanel scores={scores} isUpdating={scoresUpdating} roundCount={scoreRound} />
+            )}
+            {fabTab === 'mood' && (
+              <CustomerMoodPanel
+                selectedMood={customerMood}
+                onMoodChange={setCustomerMood}
+                disabled={sessionStarted}
+              />
+            )}
+          </div>
+        </div>
+
+        {/* FAB button */}
+        <button
+          className={`fab-btn ${fabOpen ? 'fab-btn--open' : ''}`}
+          onClick={() => setFabOpen(prev => !prev)}
+          aria-label="Toggle stats & mood"
+        >
+          {fabOpen ? (
+            <X size={20} />
+          ) : (
+            <>
+              <BarChart2 size={19} />
+              {/* Score badge — shows current overall or pulse dot */}
+              {hasScores && (
+                <span className="fab-score-badge">
+                  {(Object.values(scores).filter(v => v !== null).reduce((a, b) => a + b, 0) /
+                    Object.values(scores).filter(v => v !== null).length).toFixed(1)}
+                </span>
+              )}
+              {scoresUpdating && <span className="fab-pulse" />}
+            </>
+          )}
+        </button>
       </div>
 
     </div>

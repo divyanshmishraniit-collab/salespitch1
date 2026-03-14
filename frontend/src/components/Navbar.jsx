@@ -1,59 +1,120 @@
-import React from 'react';
-import { BookOpen, Mic, Target, GraduationCap, LogOut } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Menu, X, Upload, Mic, BookOpen, LogOut, ChevronDown } from 'lucide-react';
 import './Navbar.css';
 
 export default function Navbar({ activeTab, setActiveTab, hasBooks, userRole, onLogout }) {
-  const isAdmin = userRole === 'admin';
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+  const menuRef = useRef(null);
+
+  const tabs = [
+    ...(userRole === 'admin' ? [{ id: 'upload', label: 'Knowledge Base', icon: Upload }] : []),
+    { id: 'practice', label: 'Practice', icon: Mic },
+    { id: 'tutorial', label: 'Scenarios', icon: BookOpen },
+  ];
+
+  useEffect(() => {
+    const handleScroll = () => setScrolled(window.scrollY > 4);
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setMenuOpen(false);
+      }
+    };
+    if (menuOpen) document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [menuOpen]);
+
+  // Close menu on tab change
+  const handleTabChange = (id) => {
+    setActiveTab(id);
+    setMenuOpen(false);
+  };
 
   return (
-    <header className="navbar">
+    <nav className={`navbar ${scrolled ? 'navbar--scrolled' : ''}`} ref={menuRef}>
       <div className="navbar-inner">
+        {/* Logo */}
         <div className="navbar-brand">
           <div className="navbar-logo">
-            <Target size={18} strokeWidth={2.5} />
+            <img src="/NIIT_logo.svg" alt="NIIT" className="navbar-logo-img" />
           </div>
-          <span className="navbar-title">SalesPitch<span className="navbar-title-accent">AI</span></span>
+          <div className="navbar-brand-text">
+            <span className="navbar-title">Sales Coach</span>
+            <span className="navbar-sub">NIIT</span>
+          </div>
         </div>
 
-        <nav className="navbar-nav">
-          {isAdmin && (
-            <button
-              className={`nav-tab ${activeTab === 'upload' ? 'active' : ''}`}
-              onClick={() => setActiveTab('upload')}
-            >
-              <BookOpen size={15} />
-              <span>Knowledge Base</span>
-            </button>
-          )}
-          <button
-            className={`nav-tab ${activeTab === 'practice' ? 'active' : ''} ${!hasBooks ? 'disabled' : ''}`}
-            onClick={() => hasBooks && setActiveTab('practice')}
-            title={!hasBooks ? 'Upload books first' : ''}
-          >
-            <Mic size={15} />
-            <span>Practice</span>
-            {!hasBooks && <span className="nav-lock">🔒</span>}
-          </button>
-          <button
-            className={`nav-tab ${activeTab === 'tutorial' ? 'active' : ''}`}
-            onClick={() => setActiveTab('tutorial')}
-          >
-            <GraduationCap size={15} />
-            <span>Tutorial</span>
-          </button>
-        </nav>
+        {/* Desktop tabs */}
+        <div className="navbar-tabs">
+          {tabs.map(tab => {
+            const Icon = tab.icon;
+            return (
+              <button
+                key={tab.id}
+                className={`navbar-tab ${activeTab === tab.id ? 'navbar-tab--active' : ''}`}
+                onClick={() => handleTabChange(tab.id)}
+              >
+                <Icon size={14} />
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
 
-        <div className="navbar-right">
-          <div className="navbar-badge">
-            <span className="badge-dot" />
-            NIIT Limited
-          </div>
-          <button className="logout-btn" onClick={onLogout} title="Logout">
+        {/* Desktop logout */}
+        <div className="navbar-actions">
+          <button className="navbar-logout" onClick={onLogout}>
+            <LogOut size={14} />
+            <span>Logout</span>
+          </button>
+        </div>
+
+        {/* Mobile hamburger */}
+        <button
+          className={`navbar-hamburger ${menuOpen ? 'navbar-hamburger--open' : ''}`}
+          onClick={() => setMenuOpen(prev => !prev)}
+          aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+        >
+          {menuOpen ? <X size={20} /> : <Menu size={20} />}
+        </button>
+      </div>
+
+      {/* Mobile dropdown */}
+      <div className={`navbar-mobile-menu ${menuOpen ? 'navbar-mobile-menu--open' : ''}`}>
+        <div className="navbar-mobile-inner">
+          {tabs.map(tab => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                className={`navbar-mobile-tab ${isActive ? 'navbar-mobile-tab--active' : ''}`}
+                onClick={() => handleTabChange(tab.id)}
+              >
+                <div className="navbar-mobile-tab-left">
+                  <div className={`navbar-mobile-icon ${isActive ? 'navbar-mobile-icon--active' : ''}`}>
+                    <Icon size={16} />
+                  </div>
+                  <span>{tab.label}</span>
+                </div>
+                {isActive && <div className="navbar-mobile-active-dot" />}
+              </button>
+            );
+          })}
+
+          <div className="navbar-mobile-divider" />
+
+          <button className="navbar-mobile-logout" onClick={() => { onLogout(); setMenuOpen(false); }}>
             <LogOut size={15} />
             <span>Logout</span>
           </button>
         </div>
       </div>
-    </header>
+    </nav>
   );
 }
