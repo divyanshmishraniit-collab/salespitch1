@@ -53,6 +53,20 @@ const RUDE_PATTERNS = [
   /i'?m done (with this|talking)/i,
   /you'?re (fired|dismissed)/i,
   /end this (call|meeting|conversation)/i,
+  /don'?t want to (work|deal|talk|speak|do business) with you/i,
+  /not (interested|going to work) with you/i,
+  /won'?t (work|deal|do business) with you/i,
+  /not going to (buy|purchase|proceed|continue)/i,
+  /no (interest|intention) (of|in) (working|buying|proceeding)/i,
+  /i('?m| am) not (interested|buying|proceeding)/i,
+  /not (doing|taking) this/i,
+  /forget (it|this|about it)/i,
+  /this isn'?t (going to work|happening)/i,
+  /i('?ve| have) (changed|made up) my mind/i,
+  /don'?t (bother|call|contact) me/i,
+  /not a (fit|good fit|match)/i,
+  /pass on this/i,
+  /no (thanks|thank you),? (I'm|I am|not|goodbye)/i,
 ];
 
 export default function PracticePage({ uploadedBooks }) {
@@ -532,7 +546,7 @@ export default function PracticePage({ uploadedBooks }) {
         {dealLost && (
           <div className="deal-lost-bar">
             <div className="deal-lost-left">
-              <span className="deal-lost-icon">💔</span>
+              {/* <span className="deal-lost-icon">💔</span> */}
               <div>
                 <span className="deal-lost-title">You Lost This Deal</span>
                 <span className="deal-lost-sub">{dealLostReason}</span>
